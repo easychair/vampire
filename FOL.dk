@@ -1,0 +1,34 @@
+(; Prop ;)
+Prop : Type.
+def Prf : (Prop -> Type).
+true : Prop.
+[] Prf true --> (r : Prop -> ((Prf r) -> (Prf r))).
+false : Prop.
+[] Prf false --> (r : Prop -> (Prf r)).
+not : (Prop -> Prop).
+[p] Prf (not p) --> ((Prf p) -> (r : Prop -> (Prf r))).
+and : (Prop -> (Prop -> Prop)).
+[p, q] Prf (and p q) --> (r : Prop -> (((Prf p) -> ((Prf q) -> (Prf r))) -> (Prf r))).
+or : (Prop -> (Prop -> Prop)).
+[p, q] Prf (or p q) --> (r : Prop -> (((Prf p) -> (Prf r)) -> (((Prf q) -> (Prf r)) -> (Prf r)))).
+imp : (Prop -> (Prop -> Prop)).
+[p, q] Prf (imp p q) --> ((Prf p) -> (Prf q)).
+
+(; Set ;)
+Set : Type.
+injective El : (Set -> Type).
+iota : Set.
+
+(; Quant ;)
+forall : (a : Set -> (((El a) -> Prop) -> Prop)).
+[a, p] Prf (forall a p) --> (x : (El a) -> (Prf (p x))).
+exists : (a : Set -> (((El a) -> Prop) -> Prop)).
+[a, p] Prf (exists a p) --> (r : Prop -> ((x : (El a) -> ((Prf (p x)) -> (Prf r))) -> (Prf r))).
+
+(; Classic ;)
+def cPrf : (Prop -> Type) := (p : Prop => (Prf (not (not p)))).
+def cand : (Prop -> (Prop -> Prop)) := (p : Prop => (q : Prop => (and (not (not p)) (not (not q))))).
+def cor : (Prop -> (Prop -> Prop)) := (p : Prop => (q : Prop => (or (not (not p)) (not (not q))))).
+def cimp : (Prop -> (Prop -> Prop)) := (p : Prop => (q : Prop => (imp (not (not p)) (not (not q))))).
+def cforall : (a : Set -> (((El a) -> Prop) -> Prop)) := (a : Set => (p : ((El a) -> Prop) => (forall a (x : (El a) => (not (not (p x))))))).
+def cexists : (a : Set -> (((El a) -> Prop) -> Prop)) := (a : Set => (p : ((El a) -> Prop) => (exists a (x : (El a) => (not (not (p x))))))).
