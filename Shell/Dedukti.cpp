@@ -53,10 +53,6 @@ def cforall : (a : Set -> (((El a) -> Prop) -> Prop)) := (a : Set => (p : ((El a
 def cexists : (a : Set -> (((El a) -> Prop) -> Prop)) := (a : Set => (p : ((El a) -> Prop) => (exists a (x : (El a) => (not (not (p x))))))).
 
 )";
-const char *IOTA = "iota";
-const char *ELEMENT = "El";
-const char *PROPOSITION = "Prop";
-const char *PROOF = "Prf";
 
 using namespace Kernel;
 
@@ -78,7 +74,7 @@ void outputTypeDecl(std::ostream &out, const char *name, OperatorType *type) {
   ASS(type->isAllDefault())
 
   for(unsigned i = 0; i < type->arity(); i++)
-    out << "(" << ELEMENT << " " << IOTA << ")" << " -> ";
+    out << "(El iota) -> ";
 
   TermList range = type->result();
   // we don't support many-sorted logic yet
@@ -86,10 +82,10 @@ void outputTypeDecl(std::ostream &out, const char *name, OperatorType *type) {
 
   // predicate
   if(range.isEmpty())
-    out << PROPOSITION;
+    out << "Prop";
   // function
   else
-    out << "(" << ELEMENT << " " << IOTA << ")";
+    out << "(El iota)";
 
   out << "." << std::endl;
 }
@@ -133,7 +129,7 @@ static void outputClause(std::ostream &out, Clause *clause) {
   CALL("Dedukti::outputClause")
   ASS(!clause->isEmpty())
 
-  out << PROOF << " ";
+  out << "Prf ";
   DHMap<unsigned, TermList> sorts;
   SortHelper::collectVariableSorts(clause, sorts);
 
