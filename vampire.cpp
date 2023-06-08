@@ -42,6 +42,8 @@
 
 #include "CASC/PortfolioMode.hpp"
 #include "Shell/CommandLine.hpp"
+
+#include "Shell/Dedukti.hpp"
 #include "Shell/Normalisation.hpp"
 #include "Shell/Options.hpp"
 #include "Shell/Property.hpp"
@@ -319,6 +321,12 @@ void outputMode(Problem* problem)
 {
   ScopedPtr<Problem> prb(problem);
 
+  Problem* prb = UIHelper::getInputProblem();
+
+  bool dedukti = env.options->proof() == Options::Proof::DEDUKTI;
+  if(dedukti)
+    Dedukti::outputPrelude(std::cout);
+
   //outputSymbolDeclarations also deals with sorts for now
   //UIHelper::outputSortDeclarations(std::cout);
   UIHelper::outputSymbolDeclarations(std::cout);
@@ -326,7 +334,10 @@ void outputMode(Problem* problem)
 
   while (units.hasNext()) {
     Unit* u = units.next();
-    std::cout << TPTPPrinter::toString(u) << "\n";
+    if(dedukti)
+      Dedukti::outputAxiom(std::cout, u);
+    else
+      std::cout << TPTPPrinter::toString(u) << "\n";
   }
 
   if(env.options->latexOutput()!="off"){ outputProblemToLaTeX(prb.ptr()); }

@@ -839,10 +839,10 @@ InferenceStore::ProofPrinter* InferenceStore::createProofPrinter(ostream& out)
   case Options::Proof::PROPERTY:
     return new ProofPropertyPrinter(out,this);
   case Options::Proof::OFF:
-    return 0;
+  case Options::Proof::DEDUKTI:
+    return nullptr;
   }
   ASSERTION_VIOLATION;
-  return 0;
 }
 
 /**

@@ -35,6 +35,7 @@
 #include "Parse/TPTP.hpp"
 
 #include "AnswerLiteralManager.hpp"
+#include "Dedukti.hpp"
 #include "InterpolantMinimizer.hpp"
 #include "Interpolants.hpp"
 #include "LaTeX.hpp"
@@ -691,7 +692,7 @@ void UIHelper::outputSymbolTypeDeclarationIfNeeded(ostream& out, bool function, 
   OperatorType* type = function ? sym->fnType() :
                (typeCon ? sym->typeConType() : sym->predType());
 
-  if (type->isAllDefault()) {//TODO required
+  if (type->isAllDefault() && env.options->proof() != Options::Proof::DEDUKTI) {//TODO required
     return;
   }
 
@@ -706,6 +707,11 @@ void UIHelper::outputSymbolTypeDeclarationIfNeeded(ostream& out, bool function, 
 
   //don't output type of app. It is an internal Vampire thing
   if(!(function && env.signature->isAppFun(symNumber))){
+    if(env.options->proof() == Options::Proof::DEDUKTI) {
+      Dedukti::outputTypeDecl(env.out(), symName.c_str(), type);
+      return;
+    }
+
     out << (env.getMainProblem()->isHigherOrder() ? "thf(" : "tff(")
         << (function ? "func" : (typeCon ?  "type" : "pred"))
         << "_def_" << symNumber << ", type, "
