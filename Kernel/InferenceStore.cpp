@@ -22,6 +22,7 @@
 #include "Lib/StringUtils.hpp"
 #include "Lib/ScopedPtr.hpp"
 
+#include "Shell/Dedukti.hpp"
 #include "Shell/LaTeX.hpp"
 #include "Shell/Options.hpp"
 #include "Shell/Statistics.hpp"
@@ -206,10 +207,9 @@ struct InferenceStore::ProofPrinter
       Unit* cs=outKernel.pop();
       handleStep(cs);
     }
-    if(delayPrinting) printDelayed();
-  }
+    out << fu->formula()->toString() << ' ';
 
-protected:
+    out <<"["<<Kernel::ruleName(rule);
 
   virtual bool hideProofStep(InferenceRule rule)
   {
@@ -266,16 +266,27 @@ protected:
     InferenceRule rule = cs->inference().rule();
     UnitIterator parents= cs->getParents();
 
+    bool first=true;
     while(parents.hasNext()) {
       Unit* prem=parents.next();
-      ASS(prem!=cs);
-      requestProofStep(prem);
+      out << (first ? ' ' : ',');
+      out << _is->getUnitIdStr(prem);
+      first=false;
     }
+    out << "]" << endl;
+  }
+}
 
-    if (!hideProofStep(rule)) {
-      if(delayPrinting) delayed.push(cs);
-      else printStep(cs);
-    }
+void InferenceStore::ProofPrinter::handleStep(Unit* cs)
+{
+  CALL("InferenceStore::ProofPrinter::handleStep");
+  InferenceRule rule;
+  UnitIterator parents=_is->getParents(cs, rule);
+
+  while(parents.hasNext()) {
+    Unit* prem=parents.next();
+    ASS(prem!=cs);
+    requestProofStep(prem);
   }
 
   void printDelayed()
@@ -286,25 +297,15 @@ protected:
       [](Unit *u1, Unit *u2) -> bool { return u1->number() < u2->number(); }
     );
 
-    // Print
-    for(unsigned i=0;i<delayed.size();i++){
-      printStep(delayed[i]);
-    }
+  // Sort
+  sort<UnitNumberComparator>(delayed.begin(),delayed.end());
 
+  // Print
+  for(unsigned i=0;i<delayed.size();i++){
+    printStep(delayed[i]);
   }
 
-
-
-  Stack<Unit*> outKernel;
-  Set<Unit*> handledKernel; // use UnitSpec to provide its own hash and equals
-  Stack<Unit*> delayed;
-
-  InferenceStore* _is;
-  ostream& out;
-
-  bool outputAxiomNames;
-  bool delayPrinting;
-};
+}
 
 struct InferenceStore::ProofPropertyPrinter
 : public InferenceStore::ProofPrinter
@@ -838,8 +839,9 @@ InferenceStore::ProofPrinter* InferenceStore::createProofPrinter(ostream& out)
     return new TPTPProofPrinter(out, this);
   case Options::Proof::PROPERTY:
     return new ProofPropertyPrinter(out,this);
-  case Options::Proof::OFF:
   case Options::Proof::DEDUKTI:
+    return new Dedukti::ProofPrinter(out, this);
+  case Options::Proof::OFF:
     return nullptr;
   }
   ASSERTION_VIOLATION;

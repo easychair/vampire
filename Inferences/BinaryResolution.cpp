@@ -175,6 +175,8 @@ Clause* BinaryResolution::generateClause(
       }
       resLits->push(newLit);
     }
+    else
+      leftIndex = i;
   }
 
   Literal* qrLitAfter = 0;
@@ -209,6 +211,8 @@ Clause* BinaryResolution::generateClause(
       }
       resLits->push(newLit);
     }
+    else
+      rightIndex = i;
   }
 
   if (!absUnif->usesUwa()) {
