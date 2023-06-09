@@ -191,24 +191,33 @@ void outputAxiom(std::ostream &out, Unit *axiom) {
 
 }
 
-static DHMap<Unit *, Inference *> INFERENCES;
-void registerInference(Unit *unit, Inference *inference) {
+static DHMap<Unit *, Datum *> DATA;
+void registerUnit(Unit *unit, Datum *datum) {
   CALL("Dedukti::registerInference")
-  INFERENCES.insert(unit, inference);
+  DATA.insert(unit, datum);
+}
+
+void unregisterUnit(Unit *unit) {
+  CALL("Dedukti::unregisterInference")
+  Datum *datum;
+  if(DATA.pop(unit, datum))
+    delete datum;
 }
 
 void ProofPrinter::printStep(Unit *unit) {
   CALL("Dedukti::ProofPrinter::printStep")
-  Inference *inference;
-  InferenceRule rule = unit->inference().rule();
+  Inference &inference = unit->inference();
+  InferenceRule rule = inference.rule();
 
+  out << std::endl;
   if(rule == InferenceRule::INPUT) {
     // TODO deal with input formulas
     out << "input: " << unit->toString() << std::endl;
     return;
   }
 
-  if(!INFERENCES.find(unit, inference)) {
+  Datum *datum;
+  if(!DATA.find(unit, datum)) {
     // TODO do something sensible in case we can't handle something yet
     out << "could not justify " << unit->toString() << std::endl;
     return;
@@ -217,13 +226,11 @@ void ProofPrinter::printStep(Unit *unit) {
   UnitIterator parents = _is->getParents(unit);
   switch(rule) {
   case InferenceRule::RESOLUTION:
-  case InferenceRule::SUBSUMPTION_RESOLUTION:
   {
-    BinaryResolutionInference *br = static_cast<BinaryResolutionInference *>(inference);
+    BinaryResolution *br = static_cast<BinaryResolution *>(datum);
     Unit *left = parents.next();
     Unit *right = parents.next();
-    out << std::endl;
-    out << "resolution " << br->leftIndex << " " << br->rightIndex << std::endl;
+    out << "binary resolution " << br->leftIndex << " " << br->rightIndex << std::endl;
     out << left->toString() << std::endl;
     out << right->toString() << std::endl;
     out << "----------------------------" << std::endl;
@@ -231,8 +238,8 @@ void ProofPrinter::printStep(Unit *unit) {
     break;
   }
   default:
-    // TODO do something sensible in case we can't handle something yet
-    out << "could not justify (but we had data for) " << unit->toString() << std::endl;
+    // should not register inferences for rules we don't handle
+    ASSERTION_VIOLATION;
   }
 }
 
