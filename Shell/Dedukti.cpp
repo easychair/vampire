@@ -52,6 +52,21 @@ def cimp : (Prop -> (Prop -> Prop)) := (p : Prop => (q : Prop => (imp (not (not 
 def cforall : (a : Set -> (((El a) -> Prop) -> Prop)) := (a : Set => (p : ((El a) -> Prop) => (forall a (x : (El a) => (not (not (p x))))))).
 def cexists : (a : Set -> (((El a) -> Prop) -> Prop)) := (a : Set => (p : ((El a) -> Prop) => (exists a (x : (El a) => (not (not (p x))))))).
 
+(; Clauses ;)
+def prop_clause : Type.
+def ec : prop_clause.
+def cons : (Prop -> (prop_clause -> prop_clause)).
+def clause : Type.
+def cl : (prop_clause -> clause).
+def bind : (A : Set -> (((El A) -> clause) -> clause)).
+def Prf_prop_clause : (prop_clause -> Type).
+
+[] Prf_prop_clause ec --> (Prf false).
+[p, c] Prf_prop_clause (cons p c) --> ((Prf p -> Prf false) -> (Prf_prop_clause c)).
+def Prf_clause : (clause -> Type).
+[c] Prf_clause (cl c) --> (Prf_prop_clause c).
+[A, f] Prf_clause (bind A f) --> (x : (El A) -> (Prf_clause (f x))).
+
 )";
 
 using namespace Kernel;
@@ -129,7 +144,7 @@ static void outputClause(std::ostream &out, Clause *clause) {
   CALL("Dedukti::outputClause")
   ASS(!clause->isEmpty())
 
-  out << "Prf ";
+  out << "Prf_clause ";
   DHMap<unsigned, TermList> sorts;
   SortHelper::collectVariableSorts(clause, sorts);
 
@@ -140,15 +155,14 @@ static void outputClause(std::ostream &out, Clause *clause) {
     TermList sort = next.second;
     // we don't support many-sorted logic yet
     ASS(sort == AtomicSort::defaultSort())
-    out << "(forall iota (_" << var << " : (El iota) => ";
+    out << "(bind iota (_" << var << " : (El iota) => ";
   }
 
+  out << "(cl ";
   for(unsigned i = 0; i < clause->length(); i++) {
-    bool last = i + 1 == clause->length();
     Literal *literal = (*clause)[i];
 
-    if(!last)
-      out << "(or ";
+    out << "(cons ";
     if(!literal->polarity())
       out << "(not ";
     if(literal->arity())
@@ -162,14 +176,16 @@ static void outputClause(std::ostream &out, Clause *clause) {
       out << ")";
     if(!literal->polarity())
       out << ")";
-    if(!last)
-      out << " ";
+    out << " ";
   }
+  out << "ec";
 
-  for(unsigned i = 1; i < clause->length(); i++)
+  for(unsigned i = 0; i < clause->length(); i++)
     out << ")";
   for(unsigned i = 0; i < sorts.size(); i++)
     out << "))";
+
+  out << ")";
 }
 
 void outputAxiom(std::ostream &out, Unit *axiom) {
