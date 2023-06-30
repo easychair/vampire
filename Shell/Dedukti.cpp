@@ -15,6 +15,7 @@
 #include "Dedukti.hpp"
 
 #include "Kernel/Clause.hpp"
+#include "Kernel/RobSubstitution.hpp"
 #include "Kernel/SortHelper.hpp"
 
 const char *PRELUDE = R"((; Prop ;)
@@ -244,13 +245,20 @@ void ProofPrinter::printStep(Unit *unit) {
   case InferenceRule::RESOLUTION:
   {
     BinaryResolution *br = static_cast<BinaryResolution *>(datum);
-    Unit *left = parents.next();
-    Unit *right = parents.next();
+    Clause *left = static_cast<Clause *>(parents.next());
+    Clause *right = static_cast<Clause *>(parents.next());
     out << "binary resolution " << br->leftIndex << " " << br->rightIndex << std::endl;
     out << left->toString() << std::endl;
     out << right->toString() << std::endl;
     out << "----------------------------" << std::endl;
     out << unit->toString() << std::endl;
+
+    TermList latom((*left)[br->leftIndex]);
+    TermList ratom(Literal::complementaryLiteral((*right)[br->rightIndex]));
+    std::cout << latom.toString() << " ~ " << ratom.toString() << std::endl;
+    RobSubstitution subst;
+    ALWAYS(subst.unify(latom, 0, ratom, 1));
+    std::cout << subst << std::endl;
     break;
   }
   default:
