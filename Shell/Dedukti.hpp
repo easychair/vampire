@@ -42,7 +42,7 @@ void registerUnit(Kernel::Unit *unit, Datum *datum);
 void unregisterUnit(Kernel::Unit *unit);
 
 struct ProofPrinter: public InferenceStore::ProofPrinter {
-  ProofPrinter(std::ostream &out, InferenceStore *store) : InferenceStore::ProofPrinter(out, store) {}
+  ProofPrinter(std::ostream &out, InferenceStore *store);
   void printStep(Unit* cs) override;
 };
 
