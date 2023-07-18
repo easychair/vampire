@@ -17,6 +17,8 @@
 #include "Kernel/Clause.hpp"
 #include "Kernel/RobSubstitution.hpp"
 #include "Kernel/SortHelper.hpp"
+#include "Parse/TPTP.hpp"
+#include "Shell/UIHelper.hpp"
 
 const char *PRELUDE = R"((; Prop ;)
 Prop : Type.
@@ -141,9 +143,13 @@ static void outputTermList(std::ostream &out, TermList *start) {
   }
 }
 
-static void outputClause(std::ostream &out, Clause *clause) {
+void outputClause(std::ostream &out, Clause *clause) {
   CALL("Dedukti::outputClause")
-  ASS(!clause->isEmpty())
+
+  if(clause->isEmpty()) {
+    out << "Prf_clause (cl ec)";
+    return;
+  }
 
   out << "Prf_clause ";
   DHMap<unsigned, TermList> sorts;
@@ -189,6 +195,16 @@ static void outputClause(std::ostream &out, Clause *clause) {
   out << ")";
 }
 
+void outputAxiomName(std::ostream &out, Unit *axiom) {
+  CALL("Dedukti::outputAxiomName")
+  vstring recoveredName;
+  out << "_axiom_";
+  if(Parse::TPTP::findAxiomName(axiom, recoveredName))
+    out << recoveredName;
+  else
+    out << axiom->number();
+}
+
 void outputAxiom(std::ostream &out, Unit *axiom) {
   CALL("Dedukti::outputAxiom")
   // we don't support non-clause inputs yet
@@ -200,12 +216,58 @@ void outputAxiom(std::ostream &out, Unit *axiom) {
     axiom->inputType() == UnitInputType::NEGATED_CONJECTURE
   )
 
-  out << "_ax" << axiom->number() << ": ";
-
+  outputAxiomName(out, axiom);
+  out << ": ";
   Clause *clause = static_cast<Clause *>(axiom);
   outputClause(out, clause);
   out << "." << std::endl;
+}
 
+void outputDeduction(std::ostream &out, Unit *deduction) {
+  CALL("Dedukti::outputDeduction")
+  // we don't support non-clause deductions yet
+  ASS(deduction->isClause())
+
+  out << "def _deduction_" << deduction->number() << ": ";
+  Clause *clause = static_cast<Clause *>(deduction);
+  outputClause(out, clause);
+  out << " := ";
+}
+
+void outputInput(std::ostream &out, Unit *input) {
+  CALL("Dedukti::outputInput")
+  // TODO figure out what to do about literal selection
+  outputAxiom(out, input);
+  outputDeduction(out, input);
+  outputAxiomName(out, input);
+  out << "." << std::endl;
+}
+
+void outputOops(std::ostream &out, Unit *admit, InferenceStore *store) {
+  CALL("Dedukti::outputInput")
+  // we don't support non-clause deductions yet
+  ASS(admit->isClause())
+
+  Clause *clause = static_cast<Clause *>(admit);
+  out << "_oops_" << admit->number() << ": ";
+
+  UnitIterator parents = store->getParents(admit);
+  while(parents.hasNext()) {
+    Unit *parent = parents.next();
+    ASS(parent->isClause());
+    Clause *parent_clause = static_cast<Clause *>(parent);
+    outputClause(out, parent_clause);
+    out << " -> ";
+  }
+  outputClause(out, clause);
+  out << "." << std::endl;
+
+  outputDeduction(out, admit);
+  out << "_oops_" << admit->number();
+  parents = store->getParents(admit);
+  while(parents.hasNext())
+    out << " _deduction_" << parents.next()->number();
+  out << "." << std::endl;
 }
 
 static DHMap<Unit *, Datum *> DATA;
@@ -221,22 +283,25 @@ void unregisterUnit(Unit *unit) {
     delete datum;
 }
 
+ProofPrinter::ProofPrinter(std::ostream &out, InferenceStore *store) : InferenceStore::ProofPrinter(out, store) {
+  CALL("Dedukti::ProofPrinter::ProofPrinter")
+  outputPrelude(out);
+  UIHelper::outputSymbolDeclarations(out);
+}
+
 void ProofPrinter::printStep(Unit *unit) {
   CALL("Dedukti::ProofPrinter::printStep")
   Inference &inference = unit->inference();
   InferenceRule rule = inference.rule();
 
-  out << std::endl;
   if(rule == InferenceRule::INPUT) {
-    // TODO deal with input formulas
-    out << "input: " << unit->toString() << std::endl;
+    outputInput(out, unit);
     return;
   }
 
   Datum *datum;
   if(!DATA.find(unit, datum)) {
-    // TODO do something sensible in case we can't handle something yet
-    out << "could not justify " << unit->toString() << std::endl;
+    outputOops(out, unit, _is);
     return;
   }
 
@@ -247,18 +312,18 @@ void ProofPrinter::printStep(Unit *unit) {
     BinaryResolution *br = static_cast<BinaryResolution *>(datum);
     Clause *left = static_cast<Clause *>(parents.next());
     Clause *right = static_cast<Clause *>(parents.next());
-    out << "binary resolution " << br->leftIndex << " " << br->rightIndex << std::endl;
-    out << left->toString() << std::endl;
-    out << right->toString() << std::endl;
-    out << "----------------------------" << std::endl;
-    out << unit->toString() << std::endl;
+    out << "(; binary resolution ;)" << std::endl;
+    out << "(; " << left->toString() << " ;)" << std::endl;
+    out << "(; " << right->toString() << " ;)" << std::endl;
+    out << "(; ---------------------------- ;)" << std::endl;
+    out << "(; " << unit->toString() << " ;)" << std::endl;
 
     TermList latom((*left)[br->leftIndex]);
     TermList ratom(Literal::complementaryLiteral((*right)[br->rightIndex]));
-    std::cout << latom.toString() << " ~ " << ratom.toString() << std::endl;
     RobSubstitution subst;
     ALWAYS(subst.unify(latom, 0, ratom, 1));
-    std::cout << subst << std::endl;
+    out << "(; " << subst << " ;)" << std::endl;
+    outputOops(out, unit, _is);
     break;
   }
   default:

@@ -3625,7 +3625,7 @@ void TPTP::endFof()
     _unitSources->insert(unit,source);
   }
 
-  if (env.options->outputAxiomNames()) {
+  if (env.options->outputAxiomNames() || env.options->proof() == Options::Proof::DEDUKTI) {
     assignAxiomName(unit,nm);
   }
 #if DEBUG_SHOW_UNITS
