@@ -69,6 +69,7 @@ _solver=0;
 
   void updateVarCnt();
   void considerPolarityAdvice(SATLiteral lit);
+  void trySetTrue(unsigned var);
 
   void addSatClauseToSolver(SATClause* cl, bool refutation);
   void recomputeModel(SplitLevelStack& addedComps, SplitLevelStack& removedComps, bool randomize = false);

@@ -154,6 +154,13 @@ void SplittingBranchSelector::considerPolarityAdvice(SATLiteral lit)
   }
 }
 
+/**
+ * The solver should consider making @b lit true by default.
+ */
+void SplittingBranchSelector::trySetTrue(unsigned v) {
+  _solver->suggestPolarity(v, 1);
+}
+
 static Color colorFromPossiblyDeepFOConversion(SATClause* scl,Unit*& u)
 {
   /* all the clauses added to AVATAR are FO_CONVERSIONs except when there is a duplicate literal
@@ -903,6 +910,17 @@ bool Splitter::shouldAddClauseForNonSplittable(Clause* cl, unsigned& compName, C
 
 bool Splitter::handleNonSplittable(Clause* cl)
 {
+  if(env.options->cleave() && cl->length() > 1) {
+    for(unsigned i = 0; i < cl->length(); i++) {
+      Clause* compCl;
+      SplitLevel compName = tryGetComponentNameOrAddNew(1, cl->literals() + i, cl, compCl);
+      SATLiteral nameLit = getLiteralFromName(compName);
+      _branchSelector.trySetTrue(nameLit.var());
+    }
+    _clausesAdded = true;
+    return false;
+  }
+
   SplitLevel compName;
   Clause* compCl;
   if(!shouldAddClauseForNonSplittable(cl, compName, compCl)) {
