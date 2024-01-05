@@ -88,7 +88,16 @@ public:
     bool mpol = pol ? false : true; 
     _solver.suggestPolarity(vampireVar2Minisat(var),mpol);
   }
-  
+
+  virtual void setPolarity(unsigned var, unsigned pol) override {
+    using Minisat::l_True;
+    using Minisat::l_False;
+    // 0 -> true which means negated, e.g. false in the model
+    auto mpol = pol ? l_False : l_True;
+    _solver.setPolarity(vampireVar2Minisat(var),mpol);
+  }
+
+
   /**
    * Add an assumption into the solver.
    */

@@ -104,6 +104,7 @@ public:
 
   // Currently not implemented for Z3
   virtual void suggestPolarity(unsigned var, unsigned pol) override {}
+  virtual void setPolarity(unsigned var, unsigned pol) override {}
 
   virtual void addAssumption(SATLiteral lit) override;
   virtual void retractAllAssumptions() override;

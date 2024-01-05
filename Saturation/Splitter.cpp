@@ -158,7 +158,7 @@ void SplittingBranchSelector::considerPolarityAdvice(SATLiteral lit)
  * The solver should consider making @b lit true by default.
  */
 void SplittingBranchSelector::trySetTrue(unsigned v) {
-  _solver->suggestPolarity(v, 1);
+  _solver->setPolarity(v, 1);
 }
 
 static Color colorFromPossiblyDeepFOConversion(SATClause* scl,Unit*& u)
@@ -917,7 +917,6 @@ bool Splitter::handleNonSplittable(Clause* cl)
       SATLiteral nameLit = getLiteralFromName(compName);
       _branchSelector.trySetTrue(nameLit.var());
     }
-    _clausesAdded = true;
     return false;
   }
 

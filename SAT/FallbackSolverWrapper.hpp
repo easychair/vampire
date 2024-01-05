@@ -103,6 +103,11 @@ public:
     _fallback->suggestPolarity(var,pol); 
   }
 
+  virtual void setPolarity(unsigned var,unsigned pol) override {
+    _inner->setPolarity(var,pol);
+    _fallback->setPolarity(var,pol);
+  }
+
 private:
 
   ScopedPtr<SATSolver> _inner;

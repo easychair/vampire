@@ -69,6 +69,7 @@ public:
   }
   
   virtual void suggestPolarity(unsigned var,unsigned pol) override { _inner->suggestPolarity(var,pol); }
+  virtual void setPolarity(unsigned var,unsigned pol) override { _inner->setPolarity(var,pol); }
 
 private:
 

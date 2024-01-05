@@ -130,8 +130,9 @@ public:
    * Variables start from 1 and keep increasing by 1.
    */
   virtual unsigned newVar() = 0;
-  
+
   virtual void suggestPolarity(unsigned var, unsigned pol) = 0;
+  virtual void setPolarity(unsigned var, unsigned pol) = 0;
 
   /**
    * Suggest random polarity for variables up to maxVar (inclusive),

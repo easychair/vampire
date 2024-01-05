@@ -65,6 +65,11 @@ public:
   }
 
   virtual void suggestPolarity(unsigned var, unsigned pol) override { _inner->suggestPolarity(var,pol); }
+  virtual void setPolarity(unsigned var, unsigned pol) override {
+    _inner->setPolarity(var, pol);
+    _explicit[var] = true;
+    _polarity[var] = pol;
+  }
 
 private:
   bool admitsDontcare(unsigned var) { 
@@ -112,6 +117,10 @@ private:
    * as SATLiteral(var,_asgn[var]). Used below.
    */
   DArray<bool> _asgn;
+
+  // explicitly set by setPolarity()
+  DArray<bool> _explicit;
+  DArray<bool> _polarity;
 
   /**
    * Array of clauses made satisfied by giving up the don't-care value
