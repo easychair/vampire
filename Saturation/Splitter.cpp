@@ -1215,6 +1215,30 @@ bool Splitter::doSplitting(Clause* cl)
   return true;
 }
 
+void Splitter::doConjecturing(Clause *cl) {
+  if(cl->numSelected() || cl->length() < 2)
+    return;
+
+  LiteralList *maximal = 0;
+  for(unsigned i = 0; i < cl->length(); i++)
+    if((*cl)[i]->polarity())
+      LiteralList::push((*cl)[i], maximal);
+  Ordering &ord = _sa->getOrdering();
+  ord.removeNonMaximal(maximal);
+
+  if(LiteralList::length(maximal) == cl->length()) {
+    LiteralList::destroy(maximal);
+    return;
+  }
+
+  LiteralList::Iterator it(maximal);
+  while(it.hasNext()) {
+    Literal *l = it.next();
+    conjecture(1, &l);
+  }
+  LiteralList::destroy(maximal);
+}
+
 /**
  * Uses _componentIdx to search for an existing name for the component represented by @b lits
  *
@@ -1880,11 +1904,17 @@ void Splitter::conjecture(unsigned length, Literal **literals)
   SATLiteral nameLit = getLiteralFromName(compName);
   _branchSelector.trySetTrue(nameLit);
 
+  // detect whether a component was added
   if(db_before < _db.size()) {
-    // we added some stuff to the SAT solver
-    // recompute a model and move components around as necessary
+    if (_showSplitting) {
+      env.beginOutput();
+      env.out() << "[AVATAR] conjectures: "<< compCl->toString() << std::endl;
+      env.endOutput();
+    }
+
+    // we added a literal that we want to be true in the SAT solver
+    // this isn't exactly adding a clause, but we want to recompute a model at some point soon
     _clausesAdded = true;
-    onAllProcessed();
   }
 }
 

@@ -183,6 +183,7 @@ public:
   void init(SaturationAlgorithm* sa);
 
   bool doSplitting(Clause* cl);
+  void doConjecturing(Clause *cl);
 
   void onClauseReduction(Clause* cl, ClauseIterator premises, Clause* replacement);
   void onNewClause(Clause* cl);

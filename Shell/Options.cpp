@@ -2054,17 +2054,17 @@ void Options::init()
     _splittingNonsplittableComponents.tag(OptionTag::AVATAR);
     _splittingNonsplittableComponents.onlyUsefulWith(_splitting.is(equal(true)));
 
-    _cleave = BoolOptionValue("cleave", "clv", false);
-    _cleave.description = "Split a clause speculatively, even if it is not variable-disjoint.";
-    _cleave.tag(OptionTag::AVATAR);
-    _cleave.onlyUsefulWith(_splitting.is(equal(true)));
-    _lookup.insert(&_cleave);
-
     _conjectureDomains = BoolOptionValue("conjecture_domain", "cd", false);
     _conjectureDomains.description = "Conjecture domain size information, backtracking if necessary.";
     _conjectureDomains.tag(OptionTag::AVATAR);
     _conjectureDomains.onlyUsefulWith(_splitting.is(equal(true)));
     _lookup.insert(&_conjectureDomains);
+
+    _conjectureMaximal = BoolOptionValue("conjecture_maximal", "cm", false);
+    _conjectureMaximal.description = "Conjecture maximal literals in active clauses, backtracking if necessary.";
+    _conjectureMaximal.tag(OptionTag::AVATAR);
+    _conjectureMaximal.onlyUsefulWith(_splitting.is(equal(true)));
+    _lookup.insert(&_conjectureMaximal);
 
     _nonliteralsInClauseWeight = BoolOptionValue("nonliterals_in_clause_weight","nicw",false);
     _nonliteralsInClauseWeight.description=
