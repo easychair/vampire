@@ -69,7 +69,7 @@ _solver=0;
 
   void updateVarCnt();
   void considerPolarityAdvice(SATLiteral lit);
-  void trySetTrue(unsigned var);
+  void trySetTrue(SATLiteral lit);
 
   void addSatClauseToSolver(SATClause* cl, bool refutation);
   void recomputeModel(SplitLevelStack& addedComps, SplitLevelStack& removedComps, bool randomize = false);
@@ -246,6 +246,8 @@ private:
 
   bool allSplitLevelsActive(SplitSet* s);
 
+  void conjecture(unsigned, Literal **);
+
   //settings
   bool _showSplitting;
 
@@ -307,13 +309,12 @@ private:
    * and will invariably change the SAT model.
    */
   RCClauseStack _fastClauses;
-  
-  SaturationAlgorithm* _sa;
 
   // clauses we already added to the SAT solver
   // not just optimisation: also prevents the SAT solver oscillating between two models in some cases
   Set<SATClause *, DerefPtrHash<DefaultHash>> _already_added;
 
+  SaturationAlgorithm* _sa;
 public:
   static vstring splPrefix;
 

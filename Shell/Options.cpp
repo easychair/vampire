@@ -2060,6 +2060,12 @@ void Options::init()
     _cleave.onlyUsefulWith(_splitting.is(equal(true)));
     _lookup.insert(&_cleave);
 
+    _conjectureDomains = BoolOptionValue("conjecture_domain", "cd", false);
+    _conjectureDomains.description = "Conjecture domain size information, backtracking if necessary.";
+    _conjectureDomains.tag(OptionTag::AVATAR);
+    _conjectureDomains.onlyUsefulWith(_splitting.is(equal(true)));
+    _lookup.insert(&_conjectureDomains);
+
     _nonliteralsInClauseWeight = BoolOptionValue("nonliterals_in_clause_weight","nicw",false);
     _nonliteralsInClauseWeight.description=
     "Non-literal parts of clauses (such as its split history) will also contribute to the weight";

@@ -2250,6 +2250,7 @@ public:
   bool splitAtActivation() const{ return _splitAtActivation.actualValue; }
   SplittingNonsplittableComponents splittingNonsplittableComponents() const { return _splittingNonsplittableComponents.actualValue; }
   bool cleave() const { return _cleave.actualValue; }
+  bool conjectureDomains() const { return _conjectureDomains.actualValue; }
   SplittingAddComplementary splittingAddComplementary() const { return _splittingAddComplementary.actualValue; }
   SplittingMinimizeModel splittingMinimizeModel() const { return _splittingMinimizeModel.actualValue; }
   SplittingLiteralPolarityAdvice splittingLiteralPolarityAdvice() const { return _splittingLiteralPolarityAdvice.actualValue; }
@@ -2654,6 +2655,7 @@ private:
   FloatOptionValue _splittingAvatimer;
   ChoiceOptionValue<SplittingNonsplittableComponents> _splittingNonsplittableComponents;
   BoolOptionValue _cleave;
+  BoolOptionValue _conjectureDomains;
   ChoiceOptionValue<SplittingMinimizeModel> _splittingMinimizeModel;
   ChoiceOptionValue<SplittingLiteralPolarityAdvice> _splittingLiteralPolarityAdvice;
   ChoiceOptionValue<SplittingDeleteDeactivated> _splittingDeleteDeactivated;

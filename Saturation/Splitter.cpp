@@ -155,10 +155,10 @@ void SplittingBranchSelector::considerPolarityAdvice(SATLiteral lit)
 }
 
 /**
- * The solver should consider making @b lit true by default.
+ * The solver should try reasonably hard to set `lit` true
  */
-void SplittingBranchSelector::trySetTrue(unsigned v) {
-  _solver->setPolarity(v, 1);
+void SplittingBranchSelector::trySetTrue(SATLiteral lit) {
+  _solver->setPolarity(lit.var(), lit.polarity());
 }
 
 static Color colorFromPossiblyDeepFOConversion(SATClause* scl,Unit*& u)
@@ -709,6 +709,48 @@ void Splitter::init(SaturationAlgorithm* sa)
   } else {
     _componentIdx = new SubstitutionTreeClauseVariantIndex();
   }
+
+  if(!opts.conjectureDomains())
+    return;
+  Stack<TermList> vars;
+  for(unsigned i = 0; i < env.signature->typeCons(); i++) {
+    if(env.signature->isBoolCon(i))
+      continue;
+    unsigned arity = env.signature->typeConArity(i);
+    while(vars.length() < arity)
+      vars.push(TermList(vars.length(), false));
+    Term *sort = AtomicSort::create(i, arity, vars.begin());
+    Literal *everythingEqual = Literal::createEquality(
+      true,
+      TermList(arity, false),
+      TermList(arity + 1, false),
+      TermList(sort)
+    );
+    conjecture(1, &everythingEqual);
+
+    if(arity)
+      continue;
+
+    Stack<Term *> constants;
+    for(unsigned j = 0; j < env.signature->functions(); j++) {
+      if(env.signature->functionArity(j))
+        continue;
+      Signature::Symbol *sym = env.signature->getFunction(j);
+      if(sym->fnType()->result().term() == sort)
+        constants.push(Term::createConstant(j));
+    }
+
+    for(unsigned j = 0; j < constants.length(); j++)
+      for(unsigned k = j + 1; k < constants.length(); k++) {
+        Literal *equal = Literal::createEquality(
+            true,
+            TermList(constants[j]),
+            TermList(constants[k]),
+            TermList(sort)
+        );
+        conjecture(1, &equal);
+      }
+  }
 }
 
 SplitLevel Splitter::getNameFromLiteral(SATLiteral lit) const
@@ -910,16 +952,6 @@ bool Splitter::shouldAddClauseForNonSplittable(Clause* cl, unsigned& compName, C
 
 bool Splitter::handleNonSplittable(Clause* cl)
 {
-  if(env.options->cleave() && cl->length() > 1) {
-    for(unsigned i = 0; i < cl->length(); i++) {
-      Clause* compCl;
-      SplitLevel compName = tryGetComponentNameOrAddNew(1, cl->literals() + i, cl, compCl);
-      SATLiteral nameLit = getLiteralFromName(compName);
-      _branchSelector.trySetTrue(nameLit.var());
-    }
-    return false;
-  }
-
   SplitLevel compName;
   Clause* compCl;
   if(!shouldAddClauseForNonSplittable(cl, compName, compCl)) {
@@ -1835,5 +1867,26 @@ UnitList* Splitter::preprendCurrentlyAssumedComponentClauses(UnitList* clauses)
 
   return res.list();
 }
+
+/**
+ * conjecture that the clause `literals` holds, backtracking it only if necessary
+ */
+void Splitter::conjecture(unsigned length, Literal **literals)
+{
+  unsigned db_before = _db.size();
+
+  Clause *compCl;
+  SplitLevel compName = tryGetComponentNameOrAddNew(length, literals, nullptr, compCl);
+  SATLiteral nameLit = getLiteralFromName(compName);
+  _branchSelector.trySetTrue(nameLit);
+
+  if(db_before < _db.size()) {
+    // we added some stuff to the SAT solver
+    // recompute a model and move components around as necessary
+    _clausesAdded = true;
+    onAllProcessed();
+  }
+}
+
 
 }
