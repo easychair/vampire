@@ -1216,7 +1216,7 @@ bool Splitter::doSplitting(Clause* cl)
 }
 
 void Splitter::doConjecturing(Clause *cl) {
-  if(cl->numSelected() || cl->length() < 2)
+  if(cl->length() < 2)
     return;
 
   LiteralList *maximal = 0;
@@ -1226,17 +1226,24 @@ void Splitter::doConjecturing(Clause *cl) {
   Ordering &ord = _sa->getOrdering();
   ord.removeNonMaximal(maximal);
 
+  if(!maximal)
+    return;
+
   if(LiteralList::length(maximal) == cl->length()) {
     LiteralList::destroy(maximal);
     return;
   }
 
+  if(LiteralList::length(maximal) > 1)
+    std::cout << cl->toString() << std::endl;
+
+  Stack<Literal *> lits;
   LiteralList::Iterator it(maximal);
-  while(it.hasNext()) {
-    Literal *l = it.next();
-    conjecture(1, &l);
-  }
+  while(it.hasNext())
+    lits.push(it.next());
   LiteralList::destroy(maximal);
+
+  conjecture(lits.length(), lits.begin());
 }
 
 /**

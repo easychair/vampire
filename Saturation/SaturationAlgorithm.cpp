@@ -1177,8 +1177,6 @@ void SaturationAlgorithm::activate(Clause* cl)
       return removeSelected(cl);
     }
   }
-  if(_splitter && _opt.conjectureMaximal())
-    _splitter->doConjecturing(cl);
   }
 
   _clauseActivationInProgress=true;
@@ -1241,6 +1239,9 @@ void SaturationAlgorithm::activate(Clause* cl)
   if (generated.premiseRedundant) {
     _active->remove(cl);
   }
+
+  if(_splitter && _opt.conjectureMaximal())
+    _splitter->doConjecturing(cl);
 
   return;
 }
