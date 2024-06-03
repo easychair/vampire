@@ -2054,12 +2054,6 @@ void Options::init()
     _splittingNonsplittableComponents.tag(OptionTag::AVATAR);
     _splittingNonsplittableComponents.onlyUsefulWith(_splitting.is(equal(true)));
 
-    _conjectureDomains = BoolOptionValue("conjecture_domain", "cd", false);
-    _conjectureDomains.description = "Conjecture domain size information, backtracking if necessary.";
-    _conjectureDomains.tag(OptionTag::AVATAR);
-    _conjectureDomains.onlyUsefulWith(_splitting.is(equal(true)));
-    _lookup.insert(&_conjectureDomains);
-
     _conjectureMaximal = BoolOptionValue("conjecture_maximal", "cm", false);
     _conjectureMaximal.description = "Conjecture maximal literals in active clauses, backtracking if necessary.";
     _conjectureMaximal.tag(OptionTag::AVATAR);

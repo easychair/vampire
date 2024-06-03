@@ -709,48 +709,6 @@ void Splitter::init(SaturationAlgorithm* sa)
   } else {
     _componentIdx = new SubstitutionTreeClauseVariantIndex();
   }
-
-  if(!opts.conjectureDomains())
-    return;
-  Stack<TermList> vars;
-  for(unsigned i = 0; i < env.signature->typeCons(); i++) {
-    if(env.signature->isBoolCon(i))
-      continue;
-    unsigned arity = env.signature->typeConArity(i);
-    while(vars.length() < arity)
-      vars.push(TermList(vars.length(), false));
-    Term *sort = AtomicSort::create(i, arity, vars.begin());
-    Literal *everythingEqual = Literal::createEquality(
-      true,
-      TermList(arity, false),
-      TermList(arity + 1, false),
-      TermList(sort)
-    );
-    conjecture(1, &everythingEqual);
-
-    if(arity)
-      continue;
-
-    Stack<Term *> constants;
-    for(unsigned j = 0; j < env.signature->functions(); j++) {
-      if(env.signature->functionArity(j))
-        continue;
-      Signature::Symbol *sym = env.signature->getFunction(j);
-      if(sym->fnType()->result().term() == sort)
-        constants.push(Term::createConstant(j));
-    }
-
-    for(unsigned j = 0; j < constants.length(); j++)
-      for(unsigned k = j + 1; k < constants.length(); k++) {
-        Literal *equal = Literal::createEquality(
-            true,
-            TermList(constants[j]),
-            TermList(constants[k]),
-            TermList(sort)
-        );
-        conjecture(1, &equal);
-      }
-  }
 }
 
 SplitLevel Splitter::getNameFromLiteral(SATLiteral lit) const
@@ -1913,11 +1871,8 @@ void Splitter::conjecture(unsigned length, Literal **literals)
 
   // detect whether a component was added
   if(db_before < _db.size()) {
-    if (_showSplitting) {
-      env.beginOutput();
-      env.out() << "[AVATAR] conjectures: "<< compCl->toString() << std::endl;
-      env.endOutput();
-    }
+    if (_showSplitting)
+      std::cout << "[AVATAR] conjectures: "<< compCl->toString() << std::endl;
 
     // we added a literal that we want to be true in the SAT solver
     // this isn't exactly adding a clause, but we want to recompute a model at some point soon
