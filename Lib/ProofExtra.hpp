@@ -65,8 +65,11 @@ public:
   }
 
   // associated InferenceExtra: must be present
-  const InferenceExtra &get(const Kernel::Unit *unit) {
-    return *extras.get(const_cast<Kernel::Unit *>(unit));
+  template<typename T>
+  const T &get(const Kernel::Unit *unit) {
+    auto &found = extras.get(const_cast<Kernel::Unit *>(unit));
+    ASS(found)
+    return static_cast<const T &>(*found);
   }
 };
 }

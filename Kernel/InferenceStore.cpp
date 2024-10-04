@@ -22,11 +22,11 @@
 #include "Lib/StringUtils.hpp"
 #include "Lib/ScopedPtr.hpp"
 
-#include "Shell/Dedukti.hpp"
 #include "Shell/LaTeX.hpp"
 #include "Shell/Options.hpp"
 #include "Shell/Statistics.hpp"
 #include "Shell/UIHelper.hpp"
+#include "Shell/Dedukti.hpp"
 
 #include "Parse/TPTP.hpp"
 
@@ -207,9 +207,10 @@ struct InferenceStore::ProofPrinter
       Unit* cs=outKernel.pop();
       handleStep(cs);
     }
-    out << fu->formula()->toString() << ' ';
+    if(delayPrinting) printDelayed();
+  }
 
-    out <<"["<<Kernel::ruleName(rule);
+protected:
 
   virtual bool hideProofStep(InferenceRule rule)
   {
@@ -266,27 +267,16 @@ struct InferenceStore::ProofPrinter
     InferenceRule rule = cs->inference().rule();
     UnitIterator parents= cs->getParents();
 
-    bool first=true;
     while(parents.hasNext()) {
       Unit* prem=parents.next();
-      out << (first ? ' ' : ',');
-      out << _is->getUnitIdStr(prem);
-      first=false;
+      ASS(prem!=cs);
+      requestProofStep(prem);
     }
-    out << "]" << endl;
-  }
-}
 
-void InferenceStore::ProofPrinter::handleStep(Unit* cs)
-{
-  CALL("InferenceStore::ProofPrinter::handleStep");
-  InferenceRule rule;
-  UnitIterator parents=_is->getParents(cs, rule);
-
-  while(parents.hasNext()) {
-    Unit* prem=parents.next();
-    ASS(prem!=cs);
-    requestProofStep(prem);
+    if (!hideProofStep(rule)) {
+      if(delayPrinting) delayed.push(cs);
+      else printStep(cs);
+    }
   }
 
   void printDelayed()
@@ -297,15 +287,25 @@ void InferenceStore::ProofPrinter::handleStep(Unit* cs)
       [](Unit *u1, Unit *u2) -> bool { return u1->number() < u2->number(); }
     );
 
-  // Sort
-  sort<UnitNumberComparator>(delayed.begin(),delayed.end());
+    // Print
+    for(unsigned i=0;i<delayed.size();i++){
+      printStep(delayed[i]);
+    }
 
-  // Print
-  for(unsigned i=0;i<delayed.size();i++){
-    printStep(delayed[i]);
   }
 
-}
+
+
+  Stack<Unit*> outKernel;
+  Set<Unit*> handledKernel; // use UnitSpec to provide its own hash and equals
+  Stack<Unit*> delayed;
+
+  InferenceStore* _is;
+  ostream& out;
+
+  bool outputAxiomNames;
+  bool delayPrinting;
+};
 
 struct InferenceStore::ProofPropertyPrinter
 : public InferenceStore::ProofPrinter
@@ -828,6 +828,26 @@ protected:
   }
 };
 
+struct InferenceStore::DeduktiProofPrinter
+: public InferenceStore::ProofPrinter
+{
+  DeduktiProofPrinter(ostream& out, InferenceStore* is)
+  : ProofPrinter(out, is) {}
+
+  void print()
+  {
+    Dedukti::outputPrelude(out);
+    UIHelper::outputSymbolDeclarations(out);
+    ProofPrinter::print();
+  }
+
+  void printStep(Unit* us)
+  {
+    Dedukti::outputUnit(out, us);
+    // out << "banana" << us->toString() << std::endl;
+  }
+};
+
 InferenceStore::ProofPrinter* InferenceStore::createProofPrinter(ostream& out)
 {
   switch(env.options->proof()) {
@@ -839,12 +859,13 @@ InferenceStore::ProofPrinter* InferenceStore::createProofPrinter(ostream& out)
     return new TPTPProofPrinter(out, this);
   case Options::Proof::PROPERTY:
     return new ProofPropertyPrinter(out,this);
-  case Options::Proof::DEDUKTI:
-    return new Dedukti::ProofPrinter(out, this);
   case Options::Proof::OFF:
-    return nullptr;
+    return 0;
+  case Options::Proof::DEDUKTI:
+    return new DeduktiProofPrinter(out, this);
   }
   ASSERTION_VIOLATION;
+  return 0;
 }
 
 /**
@@ -944,3 +965,5 @@ InferenceStore* InferenceStore::instance()
 }
 
 }
+
+#include "Shell/Dedukti.cpp"

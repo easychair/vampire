@@ -321,8 +321,6 @@ void outputMode(Problem* problem)
 {
   ScopedPtr<Problem> prb(problem);
 
-  Problem* prb = UIHelper::getInputProblem();
-
   bool dedukti = env.options->proof() == Options::Proof::DEDUKTI;
   if(dedukti)
     Dedukti::outputPrelude(std::cout);

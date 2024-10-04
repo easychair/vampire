@@ -20,6 +20,9 @@
 #include "Parse/TPTP.hpp"
 #include "Shell/UIHelper.hpp"
 
+#include "Inferences/BinaryResolution.hpp"
+using namespace Inferences;
+
 const char *PRELUDE = R"((; Prop ;)
 Prop : Type.
 def Prf : (Prop -> Type).
@@ -78,12 +81,10 @@ namespace Shell {
 namespace Dedukti {
 
 void outputPrelude(std::ostream &out) {
-  CALL("Dedukti::outputPrelude")
   out << PRELUDE;
 }
 
 void outputTypeDecl(std::ostream &out, const char *name, OperatorType *type) {
-  CALL("Dedukti::outputTypeDecl")
   out << name << ": ";
 
   // we don't support polymorphism yet
@@ -109,7 +110,6 @@ void outputTypeDecl(std::ostream &out, const char *name, OperatorType *type) {
 }
 
 static void outputTermList(std::ostream &out, TermList *start) {
-  CALL("Dedukti::outputTermList")
   ASS(start->isNonEmpty())
 
   Stack<TermList *> todo;
@@ -144,7 +144,6 @@ static void outputTermList(std::ostream &out, TermList *start) {
 }
 
 void outputClause(std::ostream &out, Clause *clause) {
-  CALL("Dedukti::outputClause")
 
   if(clause->isEmpty()) {
     out << "Prf_clause (cl ec)";
@@ -196,8 +195,7 @@ void outputClause(std::ostream &out, Clause *clause) {
 }
 
 void outputAxiomName(std::ostream &out, Unit *axiom) {
-  CALL("Dedukti::outputAxiomName")
-  vstring recoveredName;
+  std::string recoveredName;
   out << "_axiom_";
   if(Parse::TPTP::findAxiomName(axiom, recoveredName))
     out << recoveredName;
@@ -206,7 +204,6 @@ void outputAxiomName(std::ostream &out, Unit *axiom) {
 }
 
 void outputAxiom(std::ostream &out, Unit *axiom) {
-  CALL("Dedukti::outputAxiom")
   // we don't support non-clause inputs yet
   ASS(axiom->isClause())
   // we don't support non-axiom inputs yet
@@ -223,8 +220,7 @@ void outputAxiom(std::ostream &out, Unit *axiom) {
   out << "." << std::endl;
 }
 
-void outputDeduction(std::ostream &out, Unit *deduction) {
-  CALL("Dedukti::outputDeduction")
+void outputDeductionPrefix(std::ostream &out, Unit *deduction) {
   // we don't support non-clause deductions yet
   ASS(deduction->isClause())
 
@@ -234,24 +230,14 @@ void outputDeduction(std::ostream &out, Unit *deduction) {
   out << " := ";
 }
 
-void outputInput(std::ostream &out, Unit *input) {
-  CALL("Dedukti::outputInput")
-  // TODO figure out what to do about literal selection
-  outputAxiom(out, input);
-  outputDeduction(out, input);
-  outputAxiomName(out, input);
-  out << "." << std::endl;
-}
-
-void outputOops(std::ostream &out, Unit *admit, InferenceStore *store) {
-  CALL("Dedukti::outputInput")
+void outputSorry(std::ostream &out, Unit *admit) {
   // we don't support non-clause deductions yet
   ASS(admit->isClause())
 
   Clause *clause = static_cast<Clause *>(admit);
-  out << "_oops_" << admit->number() << ": ";
+  out << "_sorry_" << admit->number() << ": ";
 
-  UnitIterator parents = store->getParents(admit);
+  UnitIterator parents = admit->getParents();
   while(parents.hasNext()) {
     Unit *parent = parents.next();
     ASS(parent->isClause());
@@ -262,75 +248,85 @@ void outputOops(std::ostream &out, Unit *admit, InferenceStore *store) {
   outputClause(out, clause);
   out << "." << std::endl;
 
-  outputDeduction(out, admit);
-  out << "_oops_" << admit->number();
-  parents = store->getParents(admit);
+  outputDeductionPrefix(out, admit);
+  out << "_sorry_" << admit->number();
+  parents = admit->getParents();
   while(parents.hasNext())
     out << " _deduction_" << parents.next()->number();
   out << "." << std::endl;
 }
 
-static DHMap<Unit *, Datum *> DATA;
-void registerUnit(Unit *unit, Datum *datum) {
-  CALL("Dedukti::registerInference")
-  DATA.insert(unit, datum);
-}
 
-void unregisterUnit(Unit *unit) {
-  CALL("Dedukti::unregisterInference")
-  Datum *datum;
-  if(DATA.pop(unit, datum))
-    delete datum;
-}
-
-ProofPrinter::ProofPrinter(std::ostream &out, InferenceStore *store) : InferenceStore::ProofPrinter(out, store) {
-  CALL("Dedukti::ProofPrinter::ProofPrinter")
-  outputPrelude(out);
-  UIHelper::outputSymbolDeclarations(out);
-}
-
-void ProofPrinter::printStep(Unit *unit) {
-  CALL("Dedukti::ProofPrinter::printStep")
-  Inference &inference = unit->inference();
-  InferenceRule rule = inference.rule();
-
-  if(rule == InferenceRule::INPUT) {
-    outputInput(out, unit);
-    return;
-  }
-
-  Datum *datum;
-  if(!DATA.find(unit, datum)) {
-    outputOops(out, unit, _is);
-    return;
-  }
-
-  UnitIterator parents = _is->getParents(unit);
-  switch(rule) {
-  case InferenceRule::RESOLUTION:
+void outputUnit(std::ostream &out, Unit *u) {
+  ASS(u->isClause())
+  InferenceRule rule = u->inference().rule();
+  switch (rule)
   {
-    BinaryResolution *br = static_cast<BinaryResolution *>(datum);
-    Clause *left = static_cast<Clause *>(parents.next());
-    Clause *right = static_cast<Clause *>(parents.next());
-    out << "(; binary resolution ;)" << std::endl;
-    out << "(; " << left->toString() << " ;)" << std::endl;
-    out << "(; " << right->toString() << " ;)" << std::endl;
-    out << "(; ---------------------------- ;)" << std::endl;
-    out << "(; " << unit->toString() << " ;)" << std::endl;
-
-    TermList latom((*left)[br->leftIndex]);
-    TermList ratom(Literal::complementaryLiteral((*right)[br->rightIndex]));
-    RobSubstitution subst;
-    ALWAYS(subst.unify(latom, 0, ratom, 1));
-    out << "(; " << subst << " ;)" << std::endl;
-    outputOops(out, unit, _is);
+  case InferenceRule::INPUT:
+  case InferenceRule::NEGATED_CONJECTURE:
+    outputAxiom(out, u);
+    outputDeductionPrefix(out, u);
+    outputAxiomName(out, u);
+    out << "." << std::endl;
     break;
+  case InferenceRule::RESOLUTION: {
+    const BinaryResolutionExtra &br = env.proofExtra.get<Inferences::BinaryResolutionExtra>(u);
   }
-  default:
-    // should not register inferences for rules we don't handle
-    ASSERTION_VIOLATION;
+  default: outputSorry(out, u);
   }
 }
+
+void outputInput(std::ostream &out, Unit *input) {
+  // TODO figure out what to do about literal selection
+  outputAxiom(out, input);
+  outputUnit(out, input);
+  outputAxiomName(out, input);
+  out << "." << std::endl;
+}
+
+
+
+
+// ProofPrinter::ProofPrinter(std::ostream &out, InferenceStore *store) : InferenceStore::ProofPrinter(out, store) {
+//   outputPrelude(out);
+//   UIHelper::outputSymbolDeclarations(out);
+// }
+
+// void ProofPrinter::printStep(Unit *unit) {
+//   Inference &inference = unit->inference();
+//   InferenceRule rule = inference.rule();
+
+//   if(rule == InferenceRule::INPUT) {
+//     outputInput(out, unit);
+//     return;
+//   }
+
+//   UnitIterator parents = _is->getParents(unit);
+//   switch(rule) {
+//   // case InferenceRule::RESOLUTION:
+//   // {
+//   //   BinaryResolution *br = static_cast<BinaryResolution *>(datum);
+//   //   Clause *left = static_cast<Clause *>(parents.next());
+//   //   Clause *right = static_cast<Clause *>(parents.next());
+//   //   out << "(; binary resolution ;)" << std::endl;
+//   //   out << "(; " << left->toString() << " ;)" << std::endl;
+//   //   out << "(; " << right->toString() << " ;)" << std::endl;
+//   //   out << "(; ---------------------------- ;)" << std::endl;
+//   //   out << "(; " << unit->toString() << " ;)" << std::endl;
+
+//   //   TermList latom((*left)[br->leftIndex]);
+//   //   TermList ratom(Literal::complementaryLiteral((*right)[br->rightIndex]));
+//   //   RobSubstitution subst;
+//   //   ALWAYS(subst.unify(latom, 0, ratom, 1));
+//   //   out << "(; " << subst << " ;)" << std::endl;
+//   //   outputOops(out, unit, _is);
+//   //   break;
+//   // }
+//   default:
+//     // should not register inferences for rules we don't handle
+//     ASSERTION_VIOLATION;
+//   }
+// }
 
 }
 }

@@ -65,7 +65,6 @@ struct TwoLiteralRewriteInferenceExtra : public InferenceExtra {
     Kernel::TermList lhs,
     Kernel::TermList rewritten)
     : selected(selected, other), rewrite(lhs, rewritten) {}
-
   virtual void output(std::ostream &out) const override;
 
   // selected literals

@@ -23,6 +23,10 @@
 #include "Kernel/Ordering.hpp"
 #include "Kernel/RobSubstitution.hpp"
 
+namespace Indexing {
+  class BinaryResolutionIndex;
+}
+
 namespace Inferences
 {
 
