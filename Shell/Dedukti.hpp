@@ -26,25 +26,12 @@ namespace Dedukti {
 void outputPrelude(std::ostream &out);
 void outputTypeDecl(std::ostream &out, const char *name, Kernel::OperatorType *type);
 void outputAxiom(std::ostream &out, Kernel::Unit *axiom);
+void outputUnit(std::ostream &out, Kernel::Unit *axiom);
 
-struct Datum {
-  virtual ~Datum() {}
-};
-
-struct BinaryResolution: public Datum {
-  CLASS_NAME(Dedukti::BinaryResolution)
-  USE_ALLOCATOR(BinaryResolution)
-  BinaryResolution(unsigned left, unsigned right) : leftIndex(left), rightIndex(right) {}
-  unsigned leftIndex, rightIndex;
-};
-
-void registerUnit(Kernel::Unit *unit, Datum *datum);
-void unregisterUnit(Kernel::Unit *unit);
-
-struct ProofPrinter: public InferenceStore::ProofPrinter {
-  ProofPrinter(std::ostream &out, InferenceStore *store);
-  void printStep(Unit* cs) override;
-};
+// struct ProofPrinter: public InferenceStore::ProofPrinter {
+//   ProofPrinter(std::ostream &out, InferenceStore *store);
+//   void printStep(Unit* cs) override;
+// };
 
 }
 }

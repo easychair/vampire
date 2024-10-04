@@ -24,6 +24,10 @@
 #include "Kernel/RobSubstitution.hpp"
 #include "Indexing/LiteralIndex.hpp"
 
+namespace Indexing {
+  class BinaryResolutionIndex;
+}
+
 namespace Inferences
 {
 

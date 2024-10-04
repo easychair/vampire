@@ -182,8 +182,6 @@ Clause* BinaryResolution::generateClause(Clause* queryCl, Literal* queryLit, Cla
       }
       resLits->push(newLit);
     }
-    else
-      leftIndex = i;
   }
 
   Literal* qrLitAfter = 0;
@@ -217,9 +215,7 @@ Clause* BinaryResolution::generateClause(Clause* queryCl, Literal* queryLit, Cla
         }
       }
       resLits->push(newLit);
-    }
-    else
-      rightIndex = i;
+    } 
   }
 
   if (nConstraints == 0 && condRedHandler) {
