@@ -965,5 +965,3 @@ InferenceStore* InferenceStore::instance()
 }
 
 }
-
-#include "Shell/Dedukti.cpp"

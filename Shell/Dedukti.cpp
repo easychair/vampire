@@ -14,6 +14,7 @@
 
 #include "Dedukti.hpp"
 
+#include "Indexing/SubstitutionTree.hpp"
 #include "Kernel/Clause.hpp"
 #include "Kernel/RobSubstitution.hpp"
 #include "Kernel/SortHelper.hpp"
@@ -77,6 +78,14 @@ def Prf_clause : (clause -> Type).
 
 using namespace Kernel;
 
+static std::vector<Literal *> canonicalise(Clause *cl) {
+  std::vector<Literal *> lits;
+  for(unsigned i = 0; i < cl->length(); i++)
+    lits.push_back((*cl)[i]);
+  sort(lits.begin(), lits.end());
+  return lits;
+}
+
 namespace Shell {
 namespace Dedukti {
 
@@ -109,7 +118,7 @@ void outputTypeDecl(std::ostream &out, const char *name, OperatorType *type) {
   out << "." << std::endl;
 }
 
-static void outputTermList(std::ostream &out, TermList *start) {
+static void outputArgs(std::ostream &out, TermList *start) {
   ASS(start->isNonEmpty())
 
   Stack<TermList *> todo;
@@ -143,6 +152,39 @@ static void outputTermList(std::ostream &out, TermList *start) {
   }
 }
 
+static void outputTermList(std::ostream &out, TermList tl) {
+  if(tl.isVar()) {
+    out << "_" << tl.var();
+    return;
+  }
+
+  else if(tl.isTerm()) {
+    Term *term = tl.term();
+    if(term->arity())
+      out << "(";
+    out << term->functionName();
+    if(term->arity())
+      outputArgs(out, term->args());
+  }
+}
+
+
+void outputLiteral(std::ostream &out, Literal *literal) {
+  if(!literal->polarity())
+    out << "(not ";
+  if(literal->arity())
+    out << "(";
+
+  out << literal->predicateName();
+  if(literal->arity())
+    outputArgs(out, literal->args());
+
+  if(literal->arity())
+    out << ")";
+  if(!literal->polarity())
+    out << ")";
+}
+
 void outputClause(std::ostream &out, Clause *clause) {
 
   if(clause->isEmpty()) {
@@ -163,25 +205,13 @@ void outputClause(std::ostream &out, Clause *clause) {
     ASS(sort == AtomicSort::defaultSort())
     out << "(bind iota (_" << var << " : (El iota) => ";
   }
+  // TODO what order did we just print variables in?
 
   out << "(cl ";
-  for(unsigned i = 0; i < clause->length(); i++) {
-    Literal *literal = (*clause)[i];
-
+  auto canonical = canonicalise(clause);
+  for(Literal *literal : canonical) {
     out << "(cons ";
-    if(!literal->polarity())
-      out << "(not ";
-    if(literal->arity())
-      out << "(";
-
-    out << literal->predicateName();
-    if(literal->arity())
-      outputTermList(out, literal->args());
-
-    if(literal->arity())
-      out << ")";
-    if(!literal->polarity())
-      out << ")";
+    outputLiteral(out, literal);
     out << " ";
   }
   out << "ec";
@@ -259,7 +289,10 @@ void outputSorry(std::ostream &out, Unit *admit) {
 
 void outputUnit(std::ostream &out, Unit *u) {
   ASS(u->isClause())
+  Clause *derived = u->asClause();
   InferenceRule rule = u->inference().rule();
+  UnitIterator parents= u->getParents();
+
   switch (rule)
   {
   case InferenceRule::INPUT:
@@ -270,7 +303,97 @@ void outputUnit(std::ostream &out, Unit *u) {
     out << "." << std::endl;
     break;
   case InferenceRule::RESOLUTION: {
+    outputDeductionPrefix(out, u);
+    ALWAYS(parents.hasNext())
+    Clause *first = parents.next()->asClause();
+    ALWAYS(parents.hasNext())
+    Clause *second = parents.next()->asClause();
     const BinaryResolutionExtra &br = env.proofExtra.get<Inferences::BinaryResolutionExtra>(u);
+
+    // compute unifier for selected literals
+    RobSubstitution subst;
+    Literal *leftSelected = br.selectedLiteral.selectedLiteral;
+    TermList latom(leftSelected);
+    Literal *rightSelected = br.otherLiteral;
+    TermList ratom(rightSelected);
+    ALWAYS(subst.unify(latom, 0, ratom, 1));
+
+    // TODO apply subst to all of the parent literals in the same order as BinaryResolution does it
+    // this will, please God, ensure that the variables are mapped in the same way
+    Literal *leftSelectedSubst = subst.apply(leftSelected, 0);
+    Literal *rightSelectedSubst = subst.apply(rightSelected, 1);
+
+    // canonicalise parent literal order
+    auto litsLeft = canonicalise(first);
+    auto litsRight = canonicalise(second);
+
+    unsigned leftSelectedIndex = 0, rightSelectedIndex = 0;
+    while(litsLeft[leftSelectedIndex] != leftSelected) leftSelectedIndex++;
+    while(litsRight[rightSelectedIndex] != rightSelected) rightSelectedIndex++;
+
+    std::vector<Literal *> substLeft, substRight;
+    for(Literal *l : litsLeft)
+      substLeft.push_back(subst.apply(l, 0));
+    for(Literal *r : litsRight)
+      substRight.push_back(subst.apply(r, 0));
+
+    for(unsigned i = 0; i < derived->varCnt(); i++)
+      out << " _" << i << " : (El iota) => ";
+    for(unsigned i = 0; i < litsLeft.size(); i++) {
+      if(litsLeft[i] == leftSelected)
+        continue;
+      Literal *l = substLeft[i];
+      out << '_' << l << " : (Prf ";
+      outputLiteral(out, l);
+      out << " -> Prf false) => ";
+    }
+    for(unsigned i = 0; i < litsRight.size(); i++) {
+      if(litsRight[i] == rightSelected)
+        continue;
+      Literal *l = substRight[i];
+      out << '_' << l << " : (Prf ";
+      outputLiteral(out, l);
+      out << " -> Prf false) => ";
+    }
+    out << "_deduction_" << first->number();
+
+    for(unsigned i = 0; i < first->varCnt(); i++) {
+      out << " ";
+      outputTermList(out, subst.apply(TermList(i, false), 0));
+    }
+
+    for(unsigned i = 0; i < leftSelectedIndex; i++) {
+      Literal *l = substLeft[i];
+      out << " _" << l;
+    }
+
+    const char *tp = leftSelected->isPositive() ? "_tp" : "_tnp";
+    const char *tnp = rightSelected->isPositive() ? "_tp" : "_tnp";
+    out << " (" << tp << ": (Prf ";
+    outputLiteral(out, leftSelectedSubst);
+    out << ") => " << "_deduction_" << second->number();
+    for(unsigned i = 0; i < second->varCnt(); i++) {
+      out << " ";
+      outputTermList(out, subst.apply(TermList(i, false), 1));
+    }
+    for(unsigned i = 0; i < rightSelectedIndex; i++) {
+      Literal *l = substRight[i];
+      out << " _" << l;
+    }
+    out << " (" << tnp << ": Prf ";
+    outputLiteral(out, rightSelectedSubst);
+
+    out << " => (_tnp _tp)";
+    for(unsigned i = rightSelectedIndex + 1; i < litsRight.size(); i++) {
+      Literal *l = substRight[i];
+      out << " _" << l;
+    }
+    for(unsigned i = leftSelectedIndex + 1; i < litsLeft.size(); i++) {
+      Literal *l = substLeft[i];
+      out << " _" << l;
+    }
+    out << ")).\n";
+    break;
   }
   default: outputSorry(out, u);
   }
@@ -283,50 +406,6 @@ void outputInput(std::ostream &out, Unit *input) {
   outputAxiomName(out, input);
   out << "." << std::endl;
 }
-
-
-
-
-// ProofPrinter::ProofPrinter(std::ostream &out, InferenceStore *store) : InferenceStore::ProofPrinter(out, store) {
-//   outputPrelude(out);
-//   UIHelper::outputSymbolDeclarations(out);
-// }
-
-// void ProofPrinter::printStep(Unit *unit) {
-//   Inference &inference = unit->inference();
-//   InferenceRule rule = inference.rule();
-
-//   if(rule == InferenceRule::INPUT) {
-//     outputInput(out, unit);
-//     return;
-//   }
-
-//   UnitIterator parents = _is->getParents(unit);
-//   switch(rule) {
-//   // case InferenceRule::RESOLUTION:
-//   // {
-//   //   BinaryResolution *br = static_cast<BinaryResolution *>(datum);
-//   //   Clause *left = static_cast<Clause *>(parents.next());
-//   //   Clause *right = static_cast<Clause *>(parents.next());
-//   //   out << "(; binary resolution ;)" << std::endl;
-//   //   out << "(; " << left->toString() << " ;)" << std::endl;
-//   //   out << "(; " << right->toString() << " ;)" << std::endl;
-//   //   out << "(; ---------------------------- ;)" << std::endl;
-//   //   out << "(; " << unit->toString() << " ;)" << std::endl;
-
-//   //   TermList latom((*left)[br->leftIndex]);
-//   //   TermList ratom(Literal::complementaryLiteral((*right)[br->rightIndex]));
-//   //   RobSubstitution subst;
-//   //   ALWAYS(subst.unify(latom, 0, ratom, 1));
-//   //   out << "(; " << subst << " ;)" << std::endl;
-//   //   outputOops(out, unit, _is);
-//   //   break;
-//   // }
-//   default:
-//     // should not register inferences for rules we don't handle
-//     ASSERTION_VIOLATION;
-//   }
-// }
 
 }
 }
