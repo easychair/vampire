@@ -26,12 +26,7 @@ namespace Dedukti {
 void outputPrelude(std::ostream &out);
 void outputTypeDecl(std::ostream &out, const char *name, Kernel::OperatorType *type);
 void outputAxiom(std::ostream &out, Kernel::Unit *axiom);
-void outputUnit(std::ostream &out, Kernel::Unit *axiom);
-
-// struct ProofPrinter: public InferenceStore::ProofPrinter {
-//   ProofPrinter(std::ostream &out, InferenceStore *store);
-//   void printStep(Unit* cs) override;
-// };
+void outputDeduction(std::ostream &out, Kernel::Unit *axiom);
 
 }
 }

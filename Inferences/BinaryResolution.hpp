@@ -22,10 +22,7 @@
 #include "ProofExtra.hpp"
 #include "Kernel/Ordering.hpp"
 #include "Kernel/RobSubstitution.hpp"
-
-namespace Indexing {
-  class BinaryResolutionIndex;
-}
+#include "Indexing/LiteralIndex.hpp"
 
 namespace Inferences
 {
