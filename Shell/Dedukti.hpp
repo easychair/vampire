@@ -24,7 +24,7 @@ namespace Shell {
 namespace Dedukti {
 
 void outputPrelude(std::ostream &out);
-void outputTypeDecl(std::ostream &out, const char *name, Kernel::OperatorType *type);
+void outputTypeDecl(std::ostream &out, const std::string &name, Kernel::OperatorType *type);
 void outputAxiom(std::ostream &out, Kernel::Unit *axiom);
 void outputDeduction(std::ostream &out, Kernel::Unit *axiom);
 

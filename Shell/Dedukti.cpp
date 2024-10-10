@@ -22,68 +22,67 @@
 #include "Parse/TPTP.hpp"
 #include "Shell/UIHelper.hpp"
 
-
 #include <set>
 
 using namespace Inferences;
 
 const char *PRELUDE = R"(
-(; !Prop ;)
-!Prop : Type.
-def !Prf : (!Prop -> Type).
-!true : !Prop.
-[] !Prf !true --> (r : !Prop -> ((!Prf r) -> (!Prf r))).
-!false : !Prop.
-[] !Prf !false --> (r : !Prop -> (!Prf r)).
-!not : (!Prop -> !Prop).
-[p] !Prf (!not p) --> ((!Prf p) -> (r : !Prop -> (!Prf r))).
-!and : (!Prop -> (!Prop -> !Prop)).
-[p, q] !Prf (!and p q) --> (r : !Prop -> (((!Prf p) -> ((!Prf q) -> (!Prf r))) -> (!Prf r))).
-!or : (!Prop -> (!Prop -> !Prop)).
-[p, q] !Prf (!or p q) --> (r : !Prop -> (((!Prf p) -> (!Prf r)) -> (((!Prf q) -> (!Prf r)) -> (!Prf r)))).
-!imp : (!Prop -> (!Prop -> !Prop)).
-[p, q] !Prf (!imp p q) --> ((!Prf p) -> (!Prf q)).
+(; Prop ;)
+Prop : Type.
+def Prf : (Prop -> Type).
+true : Prop.
+[] Prf true --> (r : Prop -> ((Prf r) -> (Prf r))).
+false : Prop.
+[] Prf false --> (r : Prop -> (Prf r)).
+not : (Prop -> Prop).
+[p] Prf (not p) --> ((Prf p) -> (r : Prop -> (Prf r))).
+and : (Prop -> (Prop -> Prop)).
+[p, q] Prf (and p q) --> (r : Prop -> (((Prf p) -> ((Prf q) -> (Prf r))) -> (Prf r))).
+or : (Prop -> (Prop -> Prop)).
+[p, q] Prf (or p q) --> (r : Prop -> (((Prf p) -> (Prf r)) -> (((Prf q) -> (Prf r)) -> (Prf r)))).
+imp : (Prop -> (Prop -> Prop)).
+[p, q] Prf (imp p q) --> ((Prf p) -> (Prf q)).
 
-(; !Set ;)
-!Set : Type.
-injective !El : (!Set -> Type).
-!iota : !Set.
-!inhabit : !El !iota.
+(; Set ;)
+Set : Type.
+injective El : (Set -> Type).
+iota : Set.
+inhabit : El iota.
 
 (; Equality ;)
-def !eq : (!El !iota) -> (!El !iota) -> Type.
-[] !eq --> x : (!El !iota) => y : (!El !iota) => p : ((!El !iota) -> !Prop) -> (!Prf (p x) -> !Prf (p y)).
-def !refl : x : (!El !iota) -> !eq x x.
-[] !refl --> x : (!El !iota) => p : ((!El !iota) -> !Prop) => t : !Prf (p x) => t.
+def eq : (El iota) -> (El iota) -> Type.
+[] eq --> x : (El iota) => y : (El iota) => p : ((El iota) -> Prop) -> (Prf (p x) -> Prf (p y)).
+def refl : x : (El iota) -> eq x x.
+[] refl --> x : (El iota) => p : ((El iota) -> Prop) => t : Prf (p x) => t.
 
 (; Quant ;)
-!forall : (a : !Set -> (((!El a) -> !Prop) -> !Prop)).
-[a, p] !Prf (!forall a p) --> (x : (!El a) -> (!Prf (p x))).
-!exists : (a : !Set -> (((!El a) -> !Prop) -> !Prop)).
-[a, p] !Prf (!exists a p) --> (r : !Prop -> ((x : (!El a) -> ((!Prf (p x)) -> (!Prf r))) -> (!Prf r))).
+forall : (a : Set -> (((El a) -> Prop) -> Prop)).
+[a, p] Prf (forall a p) --> (x : (El a) -> (Prf (p x))).
+exists : (a : Set -> (((El a) -> Prop) -> Prop)).
+[a, p] Prf (exists a p) --> (r : Prop -> ((x : (El a) -> ((Prf (p x)) -> (Prf r))) -> (Prf r))).
 
 (; Classic ;)
-def !cPrf : (!Prop -> Type) := (p : !Prop => (!Prf (!not (!not p)))).
-def !cand : (!Prop -> (!Prop -> !Prop)) := (p : !Prop => (q : !Prop => (!and (!not (!not p)) (!not (!not q))))).
-def !cor : (!Prop -> (!Prop -> !Prop)) := (p : !Prop => (q : !Prop => (!or (!not (!not p)) (!not (!not q))))).
-def !cimp : (!Prop -> (!Prop -> !Prop)) := (p : !Prop => (q : !Prop => (!imp (!not (!not p)) (!not (!not q))))).
-def !cforall : (a : !Set -> (((!El a) -> !Prop) -> !Prop)) := (a : !Set => (p : ((!El a) -> !Prop) => (!forall a (x : (!El a) => (!not (!not (p x))))))).
-def !cexists : (a : !Set -> (((!El a) -> !Prop) -> !Prop)) := (a : !Set => (p : ((!El a) -> !Prop) => (!exists a (x : (!El a) => (!not (!not (p x))))))).
+def cPrf : (Prop -> Type) := (p : Prop => (Prf (not (not p)))).
+def cand : (Prop -> (Prop -> Prop)) := (p : Prop => (q : Prop => (and (not (not p)) (not (not q))))).
+def cor : (Prop -> (Prop -> Prop)) := (p : Prop => (q : Prop => (or (not (not p)) (not (not q))))).
+def cimp : (Prop -> (Prop -> Prop)) := (p : Prop => (q : Prop => (imp (not (not p)) (not (not q))))).
+def cforall : (a : Set -> (((El a) -> Prop) -> Prop)) := (a : Set => (p : ((El a) -> Prop) => (forall a (x : (El a) => (not (not (p x))))))).
+def cexists : (a : Set -> (((El a) -> Prop) -> Prop)) := (a : Set => (p : ((El a) -> Prop) => (exists a (x : (El a) => (not (not (p x))))))).
 
 (; Clauses ;)
-def !prop_clause : Type.
-def !ec : !prop_clause.
-def !cons : (!Prop -> (!prop_clause -> !prop_clause)).
-def !clause : Type.
-def !cl : (!prop_clause -> !clause).
-def !bind : (A : !Set -> (((!El A) -> !clause) -> !clause)).
-def !Prf_prop_clause : (!prop_clause -> Type).
+def prop_clause : Type.
+def ec : prop_clause.
+def cons : (Prop -> (prop_clause -> prop_clause)).
+def clause : Type.
+def cl : (prop_clause -> clause).
+def bind : (A : Set -> (((El A) -> clause) -> clause)).
+def Prf_prop_clause : (prop_clause -> Type).
 
-[] !Prf_prop_clause !ec --> (!Prf !false).
-[p, c] !Prf_prop_clause (!cons p c) --> ((!Prf p -> !Prf !false) -> (!Prf_prop_clause c)).
-def !Prf_clause : (!clause -> Type).
-[c] !Prf_clause (!cl c) --> (!Prf_prop_clause c).
-[A, f] !Prf_clause (!bind A f) --> (x : (!El A) -> (!Prf_clause (f x))).
+[] Prf_prop_clause ec --> (Prf false).
+[p, c] Prf_prop_clause (cons p c) --> ((Prf p -> Prf false) -> (Prf_prop_clause c)).
+def Prf_clause : (clause -> Type).
+[c] Prf_clause (cl c) --> (Prf_prop_clause c).
+[A, f] Prf_clause (bind A f) --> (x : (El A) -> (Prf_clause (f x))).
 
 (;----------------------------------------------------------------------------;)
 
@@ -114,9 +113,13 @@ struct AlwaysCare {
 template<typename Care>
 static void outputVar(std::ostream &out, unsigned var, Care care) {
   if(care(var))
-    out << "!" << var;
+    out << var;
   else
-    out << "!inhabit";
+    out << "inhabit";
+}
+
+static void outputName(std::ostream &out, const std::string &name) {
+  out << "{|" << name << "|}";
 }
 
 template<typename Care>
@@ -134,12 +137,13 @@ static void outputArgs(std::ostream &out, TermList *start, Care care) {
     else if(current->isTerm()) {
       Term *term = current->term();
       if(term->arity()) {
-        out << "(" << term->functionName();
+        out << "(";
+        outputName(out, term->functionName());
         todo.push(current->next());
         current = term->args();
       }
       else {
-        out << term->functionName();
+        outputName(out, term->functionName());
         current = current->next();
       }
     }
@@ -165,7 +169,7 @@ static void outputTermList(std::ostream &out, TermList tl, Care care) {
     Term *term = tl.term();
     if(term->arity())
       out << "(";
-    out << term->functionName();
+    outputName(out, term->functionName());
     if(term->arity())
       outputArgs(out, term->args(), care);
     if(term->arity())
@@ -176,11 +180,11 @@ static void outputTermList(std::ostream &out, TermList tl, Care care) {
 template<typename Care>
 static void outputLiteral(std::ostream &out, Literal *literal, Care care) {
   if(!literal->polarity())
-    out << "(!not ";
+    out << "(not ";
   if(literal->arity())
     out << "(";
 
-  out << literal->predicateName();
+  outputName(out, literal->predicateName());
   if(literal->arity())
     outputArgs(out, literal->args(), care);
 
@@ -192,23 +196,23 @@ static void outputLiteral(std::ostream &out, Literal *literal, Care care) {
 
 static void outputClause(std::ostream &out, Clause *clause) {
   if(clause->isEmpty()) {
-    out << "!Prf_clause (!cl !ec)";
+    out << "Prf_clause (cl ec)";
     return;
   }
 
-  out << "!Prf_clause ";
-  std::set<unsigned> vars = variables(clause);
+  out << "Prf_clause ";
+  auto vars = variables(clause);
   for(unsigned var : vars)
-    out << "(!bind !iota (!" << var << " : (!El !iota) => ";
+    out << "(bind iota (" << var << " : El iota => ";
 
-  out << "(!cl ";
+  out << "(cl ";
   auto canonical = canonicalise(clause);
   for(Literal *literal : canonical) {
-    out << "(!cons ";
+    out << "(cons ";
     outputLiteral(out, literal, AlwaysCare {});
     out << " ";
   }
-  out << "!ec";
+  out << "ec";
 
   for(unsigned i = 0; i < clause->length(); i++)
     out << ")";
@@ -220,7 +224,7 @@ static void outputClause(std::ostream &out, Clause *clause) {
 
 static void outputAxiomName(std::ostream &out, Unit *axiom) {
   std::string recoveredName;
-  out << "!axiom_";
+  out << "axiom_";
   if(Parse::TPTP::findAxiomName(axiom, recoveredName))
     out << recoveredName;
   else
@@ -231,7 +235,7 @@ static void outputDeductionPrefix(std::ostream &out, Unit *deduction) {
   // we don't support non-clause deductions yet
   ASS(deduction->isClause())
 
-  out << "def !deduction" << deduction->number() << ": ";
+  out << "def deduction" << deduction->number() << ": ";
   Clause *clause = static_cast<Clause *>(deduction);
   outputClause(out, clause);
   out << " := ";
@@ -242,7 +246,7 @@ static void sorry(std::ostream &out, Unit *admit) {
   ASS(admit->isClause())
 
   Clause *clause = static_cast<Clause *>(admit);
-  out << "!sorry" << admit->number() << ": ";
+  out << "sorry" << admit->number() << ": ";
 
   UnitIterator parents = admit->getParents();
   while(parents.hasNext()) {
@@ -253,16 +257,124 @@ static void sorry(std::ostream &out, Unit *admit) {
     out << " -> ";
   }
   outputClause(out, clause);
-  out << "." << std::endl;
+  out << ".\n";
 
   outputDeductionPrefix(out, admit);
-  out << "!sorry" << admit->number();
+  out << "sorry" << admit->number();
   parents = admit->getParents();
   while(parents.hasNext())
-    out << " !deduction" << parents.next()->number();
-  out << "." << std::endl;
+    out << " deduction" << parents.next()->number();
 }
 
+// get N parents of a unit
+template<unsigned N, typename T>
+std::array<T *, N> getParents(T *unit) {
+  std::array<T *, N> parents;
+  UnitIterator it = unit->getParents();
+  for(unsigned i = 0; i < N; i++) {
+    ALWAYS(it.hasNext())
+    parents[i] = static_cast<T *>(it.next());
+  }
+  ALWAYS(!it.hasNext())
+  return parents;
+}
+
+static void outputResolution(std::ostream &out, Clause *derived) {
+  outputDeductionPrefix(out, derived);
+
+  auto [left, right] = getParents<2>(derived);
+  const auto &br = env.proofExtra.get<Inferences::BinaryResolutionExtra>(derived);
+
+  // compute unifier for selected literals
+  RobSubstitution subst;
+  Literal *selectedLeft = br.selectedLiteral.selectedLiteral;
+  Literal *selectedRight = br.otherLiteral;
+  ASS_NEQ(selectedLeft->polarity(), selectedRight->polarity())
+  ALWAYS(subst.unify(TermList(selectedLeft), 0, TermList(selectedRight), 1));
+
+  // apply subst to all of the parent literals in the same order as BinaryResolution does it
+  // this will, I fervently hope, ensure that output variables are mapped in the same way
+  for(unsigned i = 0; i < left->length(); i++)
+    if((*left)[i] != selectedLeft)
+      subst.apply((*left)[i], 0);
+  for(unsigned i = 0; i < right->length(); i++)
+    if((*right)[i] != selectedRight)
+      subst.apply((*right)[i], 1);
+
+  // now also apply subst to the selected literals because we need it later
+  Literal *leftSelectedSubst = subst.apply(selectedLeft, 0);
+  Literal *rightSelectedSubst = subst.apply(selectedRight, 1);
+
+  // canonicalise order of literals in all clauses
+  auto derivedLits = canonicalise(derived);
+  auto litsLeft = canonicalise(left);
+  auto litsRight = canonicalise(right);
+
+  // variables in numerical order
+  auto derivedVars = variables(derived);
+  auto leftVars = variables(left);
+  auto rightVars = variables(right);
+
+  // for variables in the substitution that do not appear in the output
+  // consider e.g. p(X) and ~p(Y): X -> Y, but output is $false and has no variables
+  auto care = [&](unsigned var) -> bool { return derivedVars.count(var); };
+
+  // the left and right literals with subst applied
+  std::vector<Literal *> substLeft, substRight;
+  for(Literal *l : litsLeft)
+    substLeft.push_back(subst.apply(l, 0));
+  for(Literal *r : litsRight)
+    substRight.push_back(subst.apply(r, 1));
+
+  // bind variables present in the derived clause
+  for(unsigned v : derivedVars)
+    out << " " << v << " : El iota => ";
+  // bind literals in the derived clause
+  for(unsigned i = 0; i < derivedLits.size(); i++) {
+    Literal *l = derivedLits[i];
+    out << "" << l << " : (Prf ";
+    outputLiteral(out, l, care);
+    out << " -> Prf false) => ";
+  }
+
+  // construct the proof term: refer to
+  // "A Shallow Embedding of Resolution and Superposition Proofs into the λΠ-Calculus Modulo"
+  // Guillaume Burel
+  out << "deduction" << left->number();
+
+  for(unsigned v : leftVars) {
+    out << " ";
+    outputTermList(out, subst.apply(TermList(v, false), 0), care);
+  }
+  unsigned litLeft;
+  for(litLeft = 0; litsLeft[litLeft] != selectedLeft; litLeft++)
+    out << " " << substLeft[litLeft];
+
+  const char *tp = "tp", *tnp = "tnp";
+  if(selectedLeft->isNegative())
+    std::swap(tp, tnp);
+
+  out << " (" << tp << ": (Prf ";
+  outputLiteral(out, leftSelectedSubst, care);
+  out << ") => " << "deduction" << right->number();
+  for(unsigned v : rightVars) {
+    out << " ";
+    outputTermList(out, subst.apply(TermList(v, false), 1), care);
+  }
+  unsigned litRight;
+  for(litRight = 0; litsRight[litRight] != selectedRight; litRight++)
+    out << " " << substRight[litRight];
+  out << " (" << tnp << ": Prf ";
+  outputLiteral(out, rightSelectedSubst, care);
+
+  out << " => (tnp tp)";
+  out << ")";
+  for(litRight++; litRight < litsRight.size(); litRight++)
+    out << " " << substRight[litRight];
+  out << ")";
+  for(litLeft++; litLeft < litsLeft.size(); litLeft++)
+    out << " " << substLeft[litLeft];
+}
 
 namespace Shell {
 namespace Dedukti {
@@ -271,8 +383,9 @@ void outputPrelude(std::ostream &out) {
   out << PRELUDE;
 }
 
-void outputTypeDecl(std::ostream &out, const char *name, OperatorType *type) {
-  out << name << ": ";
+void outputTypeDecl(std::ostream &out, const std::string &name, OperatorType *type) {
+  outputName(out, name);
+  out << ": ";
 
   // we don't support polymorphism yet
   ASS_EQ(type->numTypeArguments(), 0)
@@ -280,7 +393,7 @@ void outputTypeDecl(std::ostream &out, const char *name, OperatorType *type) {
   ASS(type->isAllDefault())
 
   for(unsigned i = 0; i < type->arity(); i++)
-    out << "(!El !iota) -> ";
+    out << "El iota -> ";
 
   TermList range = type->result();
   // we don't support many-sorted logic yet
@@ -288,12 +401,12 @@ void outputTypeDecl(std::ostream &out, const char *name, OperatorType *type) {
 
   // predicate
   if(range.isEmpty())
-    out << "!Prop";
+    out << "Prop";
   // function
   else
-    out << "(!El !iota)";
+    out << "El iota";
 
-  out << "." << std::endl;
+  out << ".\n";
 }
 
 void outputAxiom(std::ostream &out, Unit *axiom) {
@@ -310,125 +423,26 @@ void outputAxiom(std::ostream &out, Unit *axiom) {
   out << ": ";
   Clause *clause = static_cast<Clause *>(axiom);
   outputClause(out, clause);
-  out << "." << std::endl;
+  out << ".\n";
 }
 
 void outputDeduction(std::ostream &out, Unit *u) {
-  ASS(u->isClause())
-  Clause *derived = u->asClause();
-  InferenceRule rule = u->inference().rule();
-  UnitIterator parents= u->getParents();
-
-  switch (rule)
+  switch(u->inference().rule())
   {
   case InferenceRule::INPUT:
   case InferenceRule::NEGATED_CONJECTURE:
     outputAxiom(out, u);
     outputDeductionPrefix(out, u);
     outputAxiomName(out, u);
-    out << "." << std::endl;
     break;
   case InferenceRule::RESOLUTION: {
-    outputDeductionPrefix(out, u);
-    ALWAYS(parents.hasNext())
-    Clause *left = parents.next()->asClause();
-    ALWAYS(parents.hasNext())
-    Clause *right = parents.next()->asClause();
-    const BinaryResolutionExtra &br = env.proofExtra.get<Inferences::BinaryResolutionExtra>(u);
-
-    // compute unifier for selected literals
-    RobSubstitution subst;
-    Literal *leftSelected = br.selectedLiteral.selectedLiteral;
-    TermList latom(leftSelected);
-    Literal *rightSelected = br.otherLiteral;
-    TermList ratom(rightSelected);
-    ALWAYS(subst.unify(latom, 0, ratom, 1));
-
-    // apply subst to all of the parent literals in the same order as BinaryResolution does it
-    // this will, please God, ensure that the variables are mapped in the same way
-    for(unsigned i = 0; i < left->length(); i++)
-      if((*left)[i] != leftSelected)
-        subst.apply((*left)[i], 0);
-    for(unsigned i = 0; i < right->length(); i++)
-      if((*right)[i] != rightSelected)
-        subst.apply((*right)[i], 1);
-
-    auto derivedLits = canonicalise(derived);
-    auto derivedVars = variables(derived);
-    auto care = [&](unsigned var) -> bool { return derivedVars.count(var); };
-
-    // now also apply to the selected literals because we need it later
-    Literal *leftSelectedSubst = subst.apply(leftSelected, 0);
-    Literal *rightSelectedSubst = subst.apply(rightSelected, 1);
-
-    auto leftVars = variables(left);
-    auto rightVars = variables(right);
-    // canonicalise parent literal order
-    auto litsLeft = canonicalise(left);
-    auto litsRight = canonicalise(right);
-
-    // TODO there must be a nicer way of doing this
-    unsigned leftSelectedIndex = 0, rightSelectedIndex = 0;
-    while(litsLeft[leftSelectedIndex] != leftSelected) leftSelectedIndex++;
-    while(litsRight[rightSelectedIndex] != rightSelected) rightSelectedIndex++;
-
-    std::vector<Literal *> substLeft, substRight;
-    for(Literal *l : litsLeft)
-      substLeft.push_back(subst.apply(l, 0));
-    for(Literal *r : litsRight)
-      substRight.push_back(subst.apply(r, 1));
-
-    for(unsigned v : derivedVars)
-      out << " !" << v << " : (!El !iota) => ";
-    for(unsigned i = 0; i < derivedLits.size(); i++) {
-      Literal *l = derivedLits[i];
-      out << "!" << l << " : (!Prf ";
-      outputLiteral(out, l, care);
-      out << " -> !Prf !false) => ";
-    }
-    out << "!deduction" << left->number();
-
-    for(unsigned v : leftVars) {
-      out << " ";
-      outputTermList(out, subst.apply(TermList(v, false), 0), care);
-    }
-    for(unsigned i = 0; i < leftSelectedIndex; i++) {
-      Literal *l = substLeft[i];
-      out << " !" << l;
-    }
-
-    const char *tp = leftSelected->isPositive() ? "!tp" : "!tnp";
-    const char *tnp = rightSelected->isPositive() ? "!tp" : "!tnp";
-    out << " (" << tp << ": (!Prf ";
-    outputLiteral(out, leftSelectedSubst, care);
-    out << ") => " << "!deduction" << right->number();
-    for(unsigned v : rightVars) {
-      out << " ";
-      outputTermList(out, subst.apply(TermList(v, false), 1), care);
-    }
-    for(unsigned i = 0; i < rightSelectedIndex; i++) {
-      Literal *l = substRight[i];
-      out << " !" << l;
-    }
-    out << " (" << tnp << ": !Prf ";
-    outputLiteral(out, rightSelectedSubst, care);
-
-    out << " => (!tnp !tp)";
-    out << ")";
-    for(unsigned i = rightSelectedIndex + 1; i < litsRight.size(); i++) {
-      Literal *l = substRight[i];
-      out << " !" << l;
-    }
-    out << ")";
-    for(unsigned i = leftSelectedIndex + 1; i < litsLeft.size(); i++) {
-      Literal *l = substLeft[i];
-      out << " !" << l;
-    }
-    out << ".\n";
+    outputResolution(out, u->asClause());
     break;
   }
-  default: sorry(out, u);
+  default:
+    sorry(out, u);
   }
+  out << ".\n";
 }
 }
 }
