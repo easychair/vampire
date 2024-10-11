@@ -15,15 +15,17 @@
 #include "Dedukti.hpp"
 
 #include "Indexing/SubstitutionTree.hpp"
-#include "Inferences/BinaryResolution.hpp"
 #include "Kernel/Clause.hpp"
 #include "Kernel/RobSubstitution.hpp"
 #include "Kernel/SortHelper.hpp"
 #include "Parse/TPTP.hpp"
 #include "Shell/UIHelper.hpp"
 
-#include <set>
+#include "Inferences/BinaryResolution.hpp"
+#include "Inferences/EqualityResolution.hpp"
+
 #include <array>
+#include <set>
 
 using namespace Inferences;
 
@@ -408,6 +410,80 @@ static void outputResolution(std::ostream &out, Clause *derived) {
   }
 }
 
+static void outputEqualityResolution(std::ostream &out, Clause *derived) {
+  outputDeductionPrefix(out, derived);
+
+  auto [parent] = getParents<1>(derived);
+  const auto &er = env.proofExtra.get<Inferences::EqualityResolutionExtra>(derived);
+
+  // compute unifier for selected literal
+  RobSubstitution subst;
+  Literal *selected = er.selectedLiteral;
+  ASS(selected->isEquality())
+  ASS(selected->isNegative())
+  TermList s = selected->termArg(0), t = selected->termArg(1);
+  ALWAYS(subst.unify(s, 0, t, 0));
+
+  // apply subst to all of the parent literals in the same order as EqualityResolution does it
+  // this will, I fervently hope, ensure that output variables are mapped in the same way
+  for(unsigned i = 0; i < parent->length(); i++)
+    if((*parent)[i] != selected)
+      subst.apply((*parent)[i], 0);
+
+  // now also apply subst to the selected literal because we need it later
+  Literal *selectedSubst = subst.apply(selected, 0);
+
+  // canonicalise order of literals in all clauses
+  auto derivedLits = canonicalise(derived);
+  auto litsParent = canonicalise(parent);
+
+  // variables in numerical order
+  auto derivedVars = variables(derived);
+  auto parentVars = variables(parent);
+
+  // for variables in the substitution that do not appear in the output
+  // consider e.g. p(X) and ~p(Y): X -> Y, but output is $false and has no variables
+  auto care = [&](unsigned var) -> bool { return derivedVars.count(var); };
+
+  // bind variables present in the derived clause
+  for(unsigned v : derivedVars)
+    out << " " << v << " : El iota => ";
+  // bind literals in the derived clause
+  for(unsigned i = 0; i < derivedLits.size(); i++) {
+    Literal *l = derivedLits[i];
+    out << "" << l << " : (Prf ";
+    outputLiteral(out, l, care);
+    out << " -> Prf false) => ";
+  }
+
+  // construct the proof term: refer to
+  // "A Shallow Embedding of Resolution and Superposition Proofs into the λΠ-Calculus Modulo"
+  // Guillaume Burel
+  out << "deduction" << parent->number();
+
+  for(unsigned v : parentVars) {
+    out << " ";
+    outputTermList(out, subst.apply(TermList(v, false), 0), care);
+  }
+  unsigned lit;
+  for(lit = 0; litsParent[lit] != selected; lit++) {
+    out << " ";
+    outputSubstitutedLiteralPtr(out, subst, 0, litsParent[lit], care);
+  }
+
+  out << " (p : Prf (";
+  outputLiteral(out, subst.apply(selected, 0), care);
+  out << ") => p (refl ";
+  outputTermList(out, subst.apply(s, 0), care);
+  out << "))";
+
+  for(lit++; lit < litsParent.size(); lit++) {
+    out << " ";
+    outputSubstitutedLiteralPtr(out, subst, 0, litsParent[lit], care);
+  }
+}
+
+
 namespace Shell {
 namespace Dedukti {
 
@@ -469,6 +545,10 @@ void outputDeduction(std::ostream &out, Unit *u) {
     break;
   case InferenceRule::RESOLUTION: {
     outputResolution(out, u->asClause());
+    break;
+  }
+  case InferenceRule::EQUALITY_RESOLUTION: {
+    outputEqualityResolution(out, u->asClause());
     break;
   }
   default:
