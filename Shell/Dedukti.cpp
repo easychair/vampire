@@ -16,12 +16,14 @@
 
 #include "Indexing/SubstitutionTree.hpp"
 #include "Kernel/Clause.hpp"
+#include "Kernel/EqHelper.hpp"
 #include "Kernel/RobSubstitution.hpp"
 #include "Kernel/SortHelper.hpp"
 #include "Parse/TPTP.hpp"
 #include "Shell/UIHelper.hpp"
 
 #include "Inferences/BinaryResolution.hpp"
+#include "Inferences/Superposition.hpp"
 #include "Inferences/EqualityResolution.hpp"
 
 #include <array>
@@ -118,8 +120,10 @@ struct AlwaysCare {
 };
 
 template<typename Care>
-static void outputVar(std::ostream &out, unsigned var, Care care) {
-  if(care(var))
+static void outputVar(std::ostream &out, unsigned var, bool special, Care care) {
+  if(special)
+    out << "z";
+  else if(care(var))
     out << var;
   else
     out << "inhabit";
@@ -138,7 +142,7 @@ static void outputArgs(std::ostream &out, TermList *start, Care care) {
   while(true) {
     out << " ";
     if(current->isVar()) {
-      outputVar(out, current->var(), care);
+      outputVar(out, current->var(), current->isSpecialVar(), care);
       current = current->next();
     }
     else if(current->isTerm()) {
@@ -168,7 +172,7 @@ static void outputArgs(std::ostream &out, TermList *start, Care care) {
 template<typename Care>
 static void outputTermList(std::ostream &out, TermList tl, Care care) {
   if(tl.isVar()) {
-    outputVar(out, tl.var(), care);
+    outputVar(out, tl.var(), tl.isSpecialVar(), care);
     return;
   }
 
@@ -410,6 +414,129 @@ static void outputResolution(std::ostream &out, Clause *derived) {
   }
 }
 
+static void outputSuperposition(std::ostream &out, Clause *derived) {
+  outputDeductionPrefix(out, derived);
+
+  auto [left, right] = getParents<2>(derived);
+  const auto &sup = env.proofExtra.get<Inferences::SuperpositionExtra>(derived);
+
+  // compute unifier for selected literals
+  RobSubstitution subst;
+  Literal *selectedLeft = sup.selected.selectedLiteral.selectedLiteral;
+  Literal *selectedRight = sup.selected.otherLiteral;
+  TermList from = sup.rewrite.lhs;
+  TermList to = EqHelper::getOtherEqualitySide(selectedRight, from);
+  bool fromisLHS = selectedRight->termArg(0) == from;
+  TermList target = sup.rewrite.target;
+  ASS(selectedRight->isEquality())
+  ASS(selectedRight->isPositive())
+  ASS(selectedRight->termArg(0) == from || selectedRight->termArg(1) == from)
+  ALWAYS(subst.unify(target, 0, from, 1))
+
+  // apply subst to all of the parent literals in the same order as Superposition does it
+  // this will, I fervently hope, ensure that output variables are mapped in the same way
+  for(unsigned i = 0; i < left->length(); i++)
+    if((*left)[i] != selectedLeft)
+      subst.apply((*left)[i], 0);
+  for(unsigned i = 0; i < right->length(); i++)
+    if((*right)[i] != selectedRight)
+      subst.apply((*right)[i], 1);
+
+  // now also apply subst to the selected literals because we need it later
+  Literal *leftSelectedSubst = subst.apply(selectedLeft, 0);
+  TermList fromSubst = subst.apply(from, 1);
+  TermList toSubst = subst.apply(to, 1);
+  Literal *leftSelectedSubstRewritten = EqHelper::replace(leftSelectedSubst, fromSubst, toSubst);
+
+  // canonicalise order of literals in all clauses
+  auto derivedLits = canonicalise(derived);
+  auto litsLeft = canonicalise(left);
+  auto litsRight = canonicalise(right);
+
+  // variables in numerical order
+  auto derivedVars = variables(derived);
+  auto leftVars = variables(left);
+  auto rightVars = variables(right);
+
+  // for variables in the substitution that do not appear in the output
+  // consider e.g. p(X) and ~p(Y): X -> Y, but output is $false and has no variables
+  auto care = [&](unsigned var) -> bool { return derivedVars.count(var); };
+
+  // bind variables present in the derived clause
+  for(unsigned v : derivedVars)
+    out << " " << v << " : El iota => ";
+  // bind literals in the derived clause
+  for(unsigned i = 0; i < derivedLits.size(); i++) {
+    Literal *l = derivedLits[i];
+    out << "" << l << " : (Prf ";
+    outputLiteral(out, l, care);
+    out << " -> Prf false) => ";
+  }
+
+  // construct the proof term: refer to
+  // "A Shallow Embedding of Resolution and Superposition Proofs into the λΠ-Calculus Modulo"
+  // Guillaume Burel
+  out << "deduction" << left->number();
+
+  for(unsigned v : leftVars) {
+    out << " ";
+    outputTermList(out, subst.apply(TermList(v, false), 0), care);
+  }
+  unsigned litLeft;
+  for(litLeft = 0; litsLeft[litLeft] != selectedLeft; litLeft++) {
+    out << " ";
+    outputSubstitutedLiteralPtr(out, subst, 0, litsLeft[litLeft], care);
+  }
+
+  // TODO q could also be one of the swappy things under the substitution
+  // life is pain
+  out << " (q : (Prf (";
+  outputLiteral(out, leftSelectedSubst, care);
+  out << ")) => deduction" << right->number();
+
+  for(unsigned v : rightVars) {
+    out << " ";
+    outputTermList(out, subst.apply(TermList(v, false), 1), care);
+  }
+  unsigned litRight;
+  for(litRight = 0; litsRight[litRight] != selectedRight; litRight++) {
+    out << " ";
+    outputSubstitutedLiteralPtr(out, subst, 1, litsRight[litRight], care);
+  }
+
+  out << " (r : (Prf (eq ";
+  outputTermList(out, subst.apply(selectedRight->termArg(0), 1), care);
+  out << " ";
+  outputTermList(out, subst.apply(selectedRight->termArg(1), 1), care);
+  out << ")) => "  << leftSelectedSubstRewritten << " (";
+
+  if(fromisLHS)
+    out << "r";
+  else {
+    out << "(comm ";
+    outputTermList(out, subst.apply(to, 1), care);
+    out << " ";
+    outputTermList(out, subst.apply(from, 1), care);
+    out << " r)";
+  }
+  out << " (z : (El iota) => ";
+
+  TermList z(0, true);
+  Literal *replaced = EqHelper::replace(leftSelectedSubst, subst.apply(from, 1), z);
+  outputLiteral(out, replaced, care);
+  out << ") q))";
+
+  for(litRight++; litRight < litsRight.size(); litRight++) {
+    out << " ";
+    outputSubstitutedLiteralPtr(out, subst, 1, litsRight[litRight], care);
+  }
+  out << ")";
+  for(litLeft++; litLeft < litsLeft.size(); litLeft++) {
+    out << " ";
+    outputSubstitutedLiteralPtr(out, subst, 0, litsLeft[litLeft], care);
+  }
+}
+
 static void outputEqualityResolution(std::ostream &out, Clause *derived) {
   outputDeductionPrefix(out, derived);
 
@@ -429,9 +556,6 @@ static void outputEqualityResolution(std::ostream &out, Clause *derived) {
   for(unsigned i = 0; i < parent->length(); i++)
     if((*parent)[i] != selected)
       subst.apply((*parent)[i], 0);
-
-  // now also apply subst to the selected literal because we need it later
-  Literal *selectedSubst = subst.apply(selected, 0);
 
   // canonicalise order of literals in all clauses
   auto derivedLits = canonicalise(derived);
@@ -543,14 +667,15 @@ void outputDeduction(std::ostream &out, Unit *u) {
     outputDeductionPrefix(out, u);
     outputAxiomName(out, u);
     break;
-  case InferenceRule::RESOLUTION: {
+  case InferenceRule::RESOLUTION:
     outputResolution(out, u->asClause());
     break;
-  }
-  case InferenceRule::EQUALITY_RESOLUTION: {
+  case InferenceRule::EQUALITY_RESOLUTION:
     outputEqualityResolution(out, u->asClause());
     break;
-  }
+  case InferenceRule::SUPERPOSITION:
+    outputSuperposition(out, u->asClause());
+    break;
   default:
     sorry(out, u);
   }
