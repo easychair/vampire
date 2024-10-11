@@ -51,10 +51,14 @@ iota : Set.
 inhabit : El iota.
 
 (; Equality ;)
-def eq : (El iota) -> (El iota) -> Type.
-[] eq --> x : (El iota) => y : (El iota) => p : ((El iota) -> Prop) -> (Prf (p x) -> Prf (p y)).
-def refl : x : (El iota) -> eq x x.
-[] refl --> x : (El iota) => p : ((El iota) -> Prop) => t : Prf (p x) => t.
+def eq : (El iota) -> (El iota) -> Prop.
+[x, y] Prf (eq x y) --> p : ((El iota) -> Prop) -> (Prf (p x) -> Prf (p y)).
+def refl : x : (El iota) -> Prf (eq x x).
+[x] refl x --> p : ((El iota) -> Prop) => t : Prf (p x) => t.
+def comm : x : (El iota) -> y : (El iota) -> Prf (eq x y) -> Prf (eq y x).
+[x, y] comm x y --> e : (Prf (eq x y)) => p : ((El iota) -> Prop) => e (z : (El iota) => imp (p z) (p x)) (t : (Prf (p x)) => t).
+def comml : x : (El iota) -> y : (El iota) -> (Prf (eq x y) -> Prf false) -> (Prf (eq y x) -> Prf false).
+[x, y] comml x y --> l : (Prf (eq x y) -> Prf false) => e : Prf (eq y x) => l (comm y x e).
 
 (; Quant ;)
 forall : (a : Set -> (((El a) -> Prop) -> Prop)).
@@ -185,13 +189,39 @@ static void outputLiteral(std::ostream &out, Literal *literal, Care care) {
   if(literal->arity())
     out << "(";
 
-  outputName(out, literal->predicateName());
+  if(literal->isEquality())
+    out << "eq";
+  else
+    outputName(out, literal->predicateName());
   if(literal->arity())
     outputArgs(out, literal->args(), care);
 
   if(literal->arity())
     out << ")";
   if(!literal->polarity())
+    out << ")";
+}
+
+template<typename Care>
+static void outputSubstitutedLiteralPtr(std::ostream &out, RobSubstitution &subst, unsigned bank, Literal *literal, Care care) {
+  if(!literal->isEquality()) {
+    out << subst.apply(literal, bank);
+    return;
+  }
+
+  TermList leftSubst = subst.apply(literal->termArg(0), bank);
+  TermList rightSubst = subst.apply(literal->termArg(1), bank);
+  Literal *after_subst = subst.apply(literal, bank);
+  bool need_swap = after_subst->termArg(0) != leftSubst;
+  if(need_swap) {
+    out << "(comml ";
+    outputTermList(out, rightSubst, care);
+    out << " ";
+    outputTermList(out, leftSubst, care);
+    out << " ";
+  }
+  out << after_subst;
+  if(need_swap)
     out << ")";
 }
 
@@ -320,13 +350,6 @@ static void outputResolution(std::ostream &out, Clause *derived) {
   // consider e.g. p(X) and ~p(Y): X -> Y, but output is $false and has no variables
   auto care = [&](unsigned var) -> bool { return derivedVars.count(var); };
 
-  // the left and right literals with subst applied
-  std::vector<Literal *> substLeft, substRight;
-  for(Literal *l : litsLeft)
-    substLeft.push_back(subst.apply(l, 0));
-  for(Literal *r : litsRight)
-    substRight.push_back(subst.apply(r, 1));
-
   // bind variables present in the derived clause
   for(unsigned v : derivedVars)
     out << " " << v << " : El iota => ";
@@ -348,8 +371,10 @@ static void outputResolution(std::ostream &out, Clause *derived) {
     outputTermList(out, subst.apply(TermList(v, false), 0), care);
   }
   unsigned litLeft;
-  for(litLeft = 0; litsLeft[litLeft] != selectedLeft; litLeft++)
-    out << " " << substLeft[litLeft];
+  for(litLeft = 0; litsLeft[litLeft] != selectedLeft; litLeft++) {
+    out << " ";
+    outputSubstitutedLiteralPtr(out, subst, 0, litsLeft[litLeft], care);
+  }
 
   const char *tp = "tp", *tnp = "tnp";
   if(selectedLeft->isNegative())
@@ -363,18 +388,24 @@ static void outputResolution(std::ostream &out, Clause *derived) {
     outputTermList(out, subst.apply(TermList(v, false), 1), care);
   }
   unsigned litRight;
-  for(litRight = 0; litsRight[litRight] != selectedRight; litRight++)
-    out << " " << substRight[litRight];
+  for(litRight = 0; litsRight[litRight] != selectedRight; litRight++) {
+    out << " ";
+    outputSubstitutedLiteralPtr(out, subst, 1, litsRight[litRight], care);
+  }
   out << " (" << tnp << ": Prf ";
   outputLiteral(out, rightSelectedSubst, care);
 
   out << " => (tnp tp)";
   out << ")";
-  for(litRight++; litRight < litsRight.size(); litRight++)
-    out << " " << substRight[litRight];
+  for(litRight++; litRight < litsRight.size(); litRight++) {
+    out << " ";
+    outputSubstitutedLiteralPtr(out, subst, 1, litsRight[litRight], care);
+  }
   out << ")";
-  for(litLeft++; litLeft < litsLeft.size(); litLeft++)
-    out << " " << substLeft[litLeft];
+  for(litLeft++; litLeft < litsLeft.size(); litLeft++) {
+    out << " ";
+    outputSubstitutedLiteralPtr(out, subst, 0, litsLeft[litLeft], care);
+  }
 }
 
 namespace Shell {
