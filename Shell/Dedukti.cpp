@@ -23,6 +23,7 @@
 #include "Shell/UIHelper.hpp"
 
 #include <set>
+#include <array>
 
 using namespace Inferences;
 

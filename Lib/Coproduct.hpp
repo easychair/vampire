@@ -28,6 +28,7 @@
 #include <memory>
 #include <functional>
 #include <tuple>
+#include <vector>
 
 namespace Lib {
 
