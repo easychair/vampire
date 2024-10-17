@@ -21,7 +21,7 @@
 
 #include "Shell/Options.hpp"
 
-#include "SAT/MinisatInterfacing.hpp"
+#include "SAT/CadicalInterfacing.hpp"
 #include "SAT/BufferedSolver.hpp"
 
 #include "Saturation/SaturationAlgorithm.hpp"
@@ -33,7 +33,7 @@ using namespace std;
 
 GroundingIndex::GroundingIndex(const Options& opt)
 {
-  _solver = new MinisatInterfacing(opt,true);
+  _solver = new CadicalInterfacing(opt,true);
   _grounder = new Kernel::GlobalSubsumptionGrounder(*_solver);
 }
 

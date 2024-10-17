@@ -32,7 +32,7 @@
 #include "Kernel/Substitution.hpp"
 #include "Kernel/FormulaUnit.hpp"
 
-#include "SAT/MinisatInterfacingNewSimp.hpp"
+#include "SAT/CadicalInterfacing.hpp"
 #include "SAT/BufferedSolver.hpp"
 
 #include "Lib/Environment.hpp"
@@ -157,7 +157,7 @@ bool FiniteModelBuilder::reset(){
   // This has been refined after adding multiple sorts i.e. no general 'size'
   // We now need the current size of the sort of each position to compute the offsets
 
-  static const unsigned VAR_MAX = MinisatInterfacingNewSimp::VAR_MAX;
+  static const unsigned VAR_MAX = std::numeric_limits<int>::max();
 
   // Start from 1 as SAT solver variables are 1-based
   unsigned offsets=1;
@@ -254,11 +254,7 @@ bool FiniteModelBuilder::reset(){
   }
 
   // Create a new SAT solver
-  try{
-    _solver = new MinisatInterfacingNewSimp(_opt,true);
-  }catch(Minisat::OutOfMemoryException&){
-    MinisatInterfacingNewSimp::reportMinisatOutOfMemory();
-  }
+  _solver = new CadicalInterfacing(_opt,true);
 
   /*
   if(_opt.satSolver() != Options::SatSolver::MINISAT){

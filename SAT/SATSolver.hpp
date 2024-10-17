@@ -244,7 +244,7 @@ public:
   // access to the model after it returns SATISFIABLE, as it uses retractAllAssumptions
   // to clean in the end.
 
-  virtual Status solveUnderAssumptions(const SATLiteralStack& assumps, unsigned conflictCountLimit, bool onlyProperSubusets) {
+  virtual Status solveUnderAssumptions(const SATLiteralStack& assumps, unsigned conflictCountLimit) {
     ASS(!hasAssumptions());
     _failedAssumptionBuffer.reset();
 
@@ -277,14 +277,9 @@ public:
    *
    * @b onlyPropagate suggests that a limited (and potentially incomplete)
    * solving strategy should be employed which only performs unit propagation.
-   *
-   * If @b onlyProperSubusets, time can be saved by
-   * skipping the case when all the given assumptions
-   * would need to be considered to obtain unsatisfiability
-   * and UNKOWN can be returned instead right away.
    */
-  Status solveUnderAssumptions(const SATLiteralStack& assumps, bool onlyPropagate=false, bool onlyProperSubusets=false) {
-    return solveUnderAssumptions(assumps,onlyPropagate ? 0u : UINT_MAX,onlyProperSubusets);
+  Status solveUnderAssumptions(const SATLiteralStack& assumps, bool onlyPropagate=false) {
+    return solveUnderAssumptions(assumps,onlyPropagate ? 0u : UINT_MAX);
   }
 
   /**

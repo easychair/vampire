@@ -158,8 +158,8 @@ Clause* GlobalSubsumption::perform(Clause* cl, Stack<Unit*>& prems)
   scl->setInference(inf);
   solver.addClause(scl);
 
-  // check for subsuming clause by looking for a proper subset of used assumptions
-  SATSolver::Status res = solver.solveUnderAssumptions(assumps, _uprOnly, true /* only proper subsets */);
+  // check for subsuming clause by looking for a subset of used assumptions
+  SATSolver::Status res = solver.solveUnderAssumptions(assumps, _uprOnly);
 
   if (res == SATSolver::Status::UNSATISFIABLE) {
     // it should always be UNSAT with full assumps,

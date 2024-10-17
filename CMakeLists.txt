@@ -33,6 +33,8 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 find_package(Threads REQUIRED)
 link_libraries(Threads::Threads)
 
+link_libraries(cadical)
+
 # set build type if not set
 if(NOT CMAKE_BUILD_TYPE)
   message(STATUS "Setting build type to 'Release' as none was specified.")
@@ -82,33 +84,11 @@ endif()
 #       by the compiler)
 ################################################################
 
-set(VAMPIRE_MINISAT_SOURCES
-    Minisat/core/Solver.cc
-    Minisat/simp/SimpSolver.cc
-    Minisat/utils/Options.cc
-    Minisat/utils/System.cc
-    SAT/MinisatInterfacing.cpp
-    SAT/MinisatInterfacingNewSimp.cpp
-    Minisat/core/Dimacs.h
-    Minisat/core/Solver.h
-    Minisat/core/SolverTypes.h
-    Minisat/mtl/Alg.h
-    Minisat/mtl/Alloc.h
-    Minisat/mtl/Heap.h
-    Minisat/mtl/IntMap.h
-    Minisat/mtl/IntTypes.h
-    Minisat/mtl/Map.h
-    Minisat/mtl/Queue.h
-    Minisat/mtl/Rnd.h
-    Minisat/mtl/Sort.h
-    Minisat/mtl/Vec.h
-    Minisat/mtl/XAlloc.h
-    Minisat/simp/SimpSolver.h
-    Minisat/utils/Options.h
-    Minisat/utils/ParseUtils.h
-    Minisat/utils/System.h
+set(VAMPIRE_CADICAL_SOURCES
+    SAT/CadicalInterfacing.hpp
+    SAT/CadicalInterfacing.cpp
     )
-source_group(minisat_source_files FILES ${VAMPIRE_MINISAT_SOURCES})
+source_group(cadical_source_files FILES ${VAMPIRE_CADICAL_SOURCES})
 
 set(VAMPIRE_DEBUG_SOURCES
     Debug/Assertion.cpp
@@ -777,7 +757,7 @@ set(VAMPIRE_SOURCES
     ${VAMPIRE_PARSE_SOURCES}
     ${VAMPIRE_FINITEMODELBUILDING_SOURCES}
     ${VAMPIRE_SMTCOMP_SOURCES}
-    ${VAMPIRE_MINISAT_SOURCES}
+    ${VAMPIRE_CADICAL_SOURCES}
     ${VAMPIRE_CASC_SOURCES}
     ${VAMPIRE_SAT_SUBSUMPTION_SOURCES}
     Forwards.hpp

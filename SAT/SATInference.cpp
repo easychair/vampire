@@ -17,8 +17,6 @@
 
 #include "SATInference.hpp"
 
-#include "MinisatInterfacing.hpp"
-
 namespace SAT
 {
 

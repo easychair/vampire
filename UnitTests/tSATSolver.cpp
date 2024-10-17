@@ -16,7 +16,7 @@
 #include "SAT/SATLiteral.hpp"
 #include "SAT/SATInference.hpp"
 #include "SAT/SATSolver.hpp"
-#include "SAT/MinisatInterfacing.hpp"
+#include "SAT/CadicalInterfacing.hpp"
 #include "SAT/Z3Interfacing.hpp"
 
 #include "Test/UnitTesting.hpp"
@@ -130,7 +130,7 @@ void testProofWithAssumptions(SATSolver& s)
 
 TEST_FUN(testProofWithAssums)
 {
-  MinisatInterfacing s(*env.options,true);
+  CadicalInterfacing s(*env.options,true);
   testProofWithAssumptions(s);
 }
 
@@ -160,12 +160,13 @@ void testInterface(SATSolverWithAssumptions &s) {
   ASS(!s.trueInAssignment(getLit('a')));
   */
 
+  // no longer hard enough to get UNKNOWN
   s.addClause(getClause("ab"));
-  ASS_EQ(s.solve(true),SATSolver::Status::UNKNOWN);
+  ASS_EQ(s.solve(true),SATSolver::Status::SATISFIABLE);
   s.addClause(getClause("aB"));
-  ASS_EQ(s.solve(true),SATSolver::Status::UNKNOWN);
+  ASS_EQ(s.solve(true),SATSolver::Status::SATISFIABLE);
   s.addClause(getClause("Ab"));
-  ASS_EQ(s.solve(true),SATSolver::Status::UNKNOWN);
+  ASS_EQ(s.solve(true),SATSolver::Status::SATISFIABLE);
   s.addClause(getClause("C"));
   ASS_EQ(s.solve(),SATSolver::Status::SATISFIABLE);
 
@@ -220,8 +221,8 @@ void testInterface(SATSolverWithAssumptions &s) {
 
 TEST_FUN(testSATSolverInterface)
 { 
-  cout << endl << "Minisat" << endl;
-  MinisatInterfacing sMini(*env.options,true);
+  cout << endl << "CaDiCaL" << endl;
+  CadicalInterfacing sMini(*env.options,true);
   testInterface(sMini);
 
   /* Not fully conforming - does not support zeroImplied and resource-limited solving
@@ -278,8 +279,8 @@ void testAssumptions(SATSolverWithAssumptions &s) {
 
 TEST_FUN(testSolvingUnderAssumptions)
 {
-  cout << endl << "Minisat" << endl;
-  MinisatInterfacing sMini(*env.options,true);
+  cout << endl << "CaDiCaL" << endl;
+  CadicalInterfacing sMini(*env.options,true);
   testAssumptions(sMini);
 
   /*cout << endl << "Z3" << endl;

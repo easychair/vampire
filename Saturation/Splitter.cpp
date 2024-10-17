@@ -43,7 +43,7 @@
 #include "SAT/MinimizingSolver.hpp"
 #include "SAT/BufferedSolver.hpp"
 #include "SAT/FallbackSolverWrapper.hpp"
-#include "SAT/MinisatInterfacing.hpp"
+#include "SAT/CadicalInterfacing.hpp"
 #include "SAT/Z3Interfacing.hpp"
 
 #include "DP/ShortConflictMetaDP.hpp"
@@ -68,7 +68,7 @@ void SplittingBranchSelector::init()
 
   switch(_parent.getOptions().satSolver()){
     case Options::SatSolver::MINISAT:
-      _solver = new MinisatInterfacing(_parent.getOptions(),true);
+      _solver = new CadicalInterfacing(_parent.getOptions(),true);
       break;
 #if VZ3
     case Options::SatSolver::Z3:
@@ -199,7 +199,7 @@ void SplittingBranchSelector::handleSatRefutation()
 
     if (satPremises) { // does our SAT solver support postponed minimization?
       SATLiteralStack dummy;
-      SATClauseList* minimizedSatPremises = MinisatInterfacing::minimizePremiseList(satPremises,dummy);
+      SATClauseList* minimizedSatPremises = CadicalInterfacing::minimizePremiseList(satPremises,dummy);
 
       actualSatPremises.loadFromIterator(SATClauseList::DestructiveIterator(minimizedSatPremises));
     } else {
@@ -254,7 +254,7 @@ void SplittingBranchSelector::handleSatRefutation()
     }
 
     SATClauseStack result;
-    MinisatInterfacing::interpolateViaAssumptions(_parent.maxSatVar(),first,second,result);
+    CadicalInterfacing::interpolateViaAssumptions(_parent.maxSatVar(),first,second,result);
 
     // turn result into Formula wrapping its CNF structure
     Formula* interpolant;

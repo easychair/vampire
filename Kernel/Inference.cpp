@@ -17,8 +17,8 @@
 #include "Lib/Environment.hpp"
 #include "Kernel/Term.hpp"
 #include "Kernel/Clause.hpp"
+#include "SAT/CadicalInterfacing.hpp"
 #include "SAT/SATInference.hpp"
-#include "SAT/MinisatInterfacing.hpp"
 #include "Debug/TimeProfiling.hpp"
 
 #include "Inference.hpp"
@@ -511,7 +511,7 @@ void Inference::minimizePremises()
 
   FromSatRefutationInfo* info = static_cast<FromSatRefutationInfo*>(_ptr2);
 
-  SATClauseList* minimized = MinisatInterfacing::minimizePremiseList(info->_satPremises,info->_usedAssumptions);
+  SATClauseList* minimized = CadicalInterfacing::minimizePremiseList(info->_satPremises,info->_usedAssumptions);
 
   SATClause* newSatRef = new(0) SATClause(0);
   newSatRef->setInference(new PropInference(minimized));

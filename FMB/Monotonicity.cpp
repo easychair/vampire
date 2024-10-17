@@ -31,7 +31,7 @@
 #include "SAT/SATSolver.hpp"
 #include "SAT/SATLiteral.hpp"
 #include "SAT/SATClause.hpp"
-#include "SAT/MinisatInterfacing.hpp"
+#include "SAT/CadicalInterfacing.hpp"
 
 #include "Monotonicity.hpp"
 
@@ -42,7 +42,7 @@ using namespace std;
 
 Monotonicity::Monotonicity(ClauseList* clauses, unsigned srt) : _srt(srt)
 {
-  _solver = new MinisatInterfacing(*env.options,true);
+  _solver = new CadicalInterfacing(*env.options,true);
 
  // create pt and pf per predicate and add the constraint -pf | -pt
  for(unsigned p=1;p<env.signature->predicates();p++){

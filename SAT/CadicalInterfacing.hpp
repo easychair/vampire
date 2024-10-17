@@ -8,24 +8,24 @@
  * and in the source directory
  */
 /**
- * @file MinisatInterfacing.hpp
- * Defines class MinisatInterfacing
+ * @file CadicalInterfacing.hpp
+ * Defines class CadicalInterfacing
  */
-#ifndef __MinisatInterfacing__
-#define __MinisatInterfacing__
+#ifndef __CadicalInterfacing__
+#define __CadicalInterfacing__
 
 #include "SATSolver.hpp"
 #include "SATLiteral.hpp"
 #include "SATClause.hpp"
 
-#include "Minisat/core/Solver.h"
+#include <cadical.hpp>
 
 namespace SAT{
 
-class MinisatInterfacing : public PrimitiveProofRecordingSATSolver
+class CadicalInterfacing : public PrimitiveProofRecordingSATSolver
 {
 public: 
-	MinisatInterfacing(const Shell::Options& opts, bool generateProofs=false);
+	CadicalInterfacing(const Shell::Options& opts, bool generateProofs=false);
 
   /**
    * Can be called only when all assumptions are retracted
@@ -73,20 +73,18 @@ public:
   virtual SATClause* getZeroImpliedCertificate(unsigned var) override;
 
   virtual void ensureVarCount(unsigned newVarCnt) override;
-  
+
   virtual unsigned newVar() override;
-  
+
   virtual void suggestPolarity(unsigned var, unsigned pol) override {
-    // 0 -> true which means negated, e.g. false in the model
-    bool mpol = pol ? false : true; 
-    _solver.suggestPolarity(vampireVar2Minisat(var),mpol);
+    _solver.phase(vampire2Cadical(pol, var));
   }
-  
+
   /**
    * Add an assumption into the solver.
    */
   virtual void addAssumption(SATLiteral lit) override;
-  
+
   virtual void retractAllAssumptions() override {
     _assumptions.clear();
     _status = Status::UNKNOWN;
@@ -96,7 +94,7 @@ public:
     return (_assumptions.size() > 0);
   };
 
-  Status solveUnderAssumptions(const SATLiteralStack& assumps, unsigned conflictCountLimit, bool) override;
+  Status solveUnderAssumptions(const SATLiteralStack& assumps, unsigned conflictCountLimit) override;
 
   /**
    * Use minisat and solving under assumptions to minimize the given set of premises (= unsat core extraction).
@@ -114,33 +112,28 @@ public:
    */
   static void interpolateViaAssumptions(unsigned maxVar, const SATClauseStack& first, const SATClauseStack& second, SATClauseStack& result);
 
-protected:    
+protected:
   void solveModuloAssumptionsAndSetStatus(unsigned conflictCountLimit = UINT_MAX);
-  
-  Minisat::Var vampireVar2Minisat(unsigned vvar) {
-    ASS_G(vvar,0); ASS_LE(vvar,(unsigned)_solver.nVars());
-    return (vvar-1);
-  }
-  
-  unsigned minisatVar2Vampire(Minisat::Var mvar) {
-    return (unsigned)(mvar+1);
-  }
-  
-  const Minisat::Lit vampireLit2Minisat(SATLiteral vlit) {
-    return Minisat::mkLit(vampireVar2Minisat(vlit.var()),vlit.isNegative()); 
-  }
-  
-  /* sign=true in minisat means "negated" in vampire */
-  const SATLiteral minisatLit2Vampire(Minisat::Lit mlit) {
-    return SATLiteral(minisatVar2Vampire(Minisat::var(mlit)),Minisat::sign(mlit) ? 0 : 1);            
-  }
-  
+
 private:
+  static int vampire2Cadical(bool polarity, unsigned atom) {
+    ASS_NEQ(atom, 0)
+    return polarity ? atom : -(int)(atom);
+  }
+
+  static int vampire2Cadical(SATLiteral vampire) {
+    return vampire2Cadical(vampire.polarity(), vampire.var());
+  }
+
+  static SATLiteral cadical2Vampire(int cadical) {
+    return SATLiteral(std::abs(cadical), cadical < 0);
+  }
+
   Status _status;
-  Minisat::vec<Minisat::Lit> _assumptions;  
-  Minisat::Solver _solver;
+  std::vector<int> _assumptions;
+  CaDiCaL::Solver _solver;
 };
 
 }//end SAT namespace
 
- #endif /*MinisatInterfacing*/
+ #endif /*CadicalInterfacing*/
