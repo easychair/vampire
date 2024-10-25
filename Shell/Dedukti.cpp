@@ -99,6 +99,53 @@ def Prf_clause : (clause -> Type).
 
 using namespace Kernel;
 
+template<typename S, typename T>
+struct Sequence;
+
+template<typename Derived>
+struct Transformation {
+  template<typename Other>
+  Sequence<Derived, Other> then(Other &&other) {
+    return Sequence<Derived, Other> { std::move(*static_cast<Derived *>(this)), other };
+  }
+};
+
+template<typename S, typename T>
+struct Sequence : public Transformation<Sequence<S, T>> {
+  S s;
+  T t;
+  Sequence(S s, T t) : s(s), t(t) {}
+  Literal *operator()(Literal *literal) { return t(s(literal)); }
+  TermList operator()(TermList term) { return t(s(term)); }
+};
+
+template<unsigned bank>
+struct DoSubstitution : public Transformation<DoSubstitution<bank>> {
+  RobSubstitution &substitution;
+  DoSubstitution(RobSubstitution &substitution) : substitution(substitution) {}
+
+  Literal *operator()(Literal *literal) { return substitution.apply(literal, bank); }
+  TermList operator()(TermList term) { return substitution.apply(term, bank); }
+};
+using DoSubstitution0 = DoSubstitution<0>;
+using DoSubstitution1 = DoSubstitution<1>;
+
+struct DoReplacement : public Transformation<DoReplacement> {
+  TermList from, to;
+  DoReplacement(TermList from, TermList to) : from(from), to(to) {}
+  Literal *operator()(Literal *literal) { return EqHelper::replace(literal, from, to); }
+
+  TermList operator()(TermList term) {
+    if(term.isVar())
+      return term;
+    // EqHelper::replace only replaces _occurrences_
+    if(term == from)
+      return to;
+    return TermList(EqHelper::replace(term.term(), from, to));
+  }
+};
+
+
 static std::vector<Literal *> canonicalise(Clause *cl) {
   std::vector<Literal *> lits;
   for(unsigned i = 0; i < cl->length(); i++)
@@ -170,7 +217,7 @@ static void outputArgs(std::ostream &out, TermList *start, Care care) {
 }
 
 template<typename Care>
-static void outputTermList(std::ostream &out, TermList tl, Care care) {
+static void outputTerm(std::ostream &out, TermList tl, Care care) {
   if(tl.isVar()) {
     outputVar(out, tl.var(), tl.isSpecialVar(), care);
     return;
@@ -208,26 +255,53 @@ static void outputLiteral(std::ostream &out, Literal *literal, Care care) {
     out << ")";
 }
 
-template<typename Care>
-static void outputSubstitutedLiteralPtr(std::ostream &out, RobSubstitution &subst, unsigned bank, Literal *literal, Care care) {
+
+template<typename Transform, typename Care>
+static void outputLiteral(
+  std::ostream &out,
+  Literal *literal,
+  Care care,
+  Transform transform
+) {
+  if(!literal->isEquality())
+    return outputLiteral(out, transform(literal), care);
+
+  if(!literal->polarity())
+    out << "(not ";
+  out << "(eq ";
+  outputTerm(out, transform(literal->termArg(0)), care);
+  out << " ";
+  outputTerm(out, transform(literal->termArg(1)), care);
+  out << ")";
+  if(!literal->polarity())
+    out << ")";
+}
+
+template<typename Transform, typename Care>
+static void outputLiteralPtr(
+  std::ostream &out,
+  Literal *literal,
+  Care care,
+  Transform transform
+) {
   if(!literal->isEquality()) {
-    out << subst.apply(literal, bank);
+    out << transform(literal);
     return;
   }
 
-  TermList leftSubst = subst.apply(literal->termArg(0), bank);
-  TermList rightSubst = subst.apply(literal->termArg(1), bank);
-  Literal *after_subst = subst.apply(literal, bank);
-  bool need_swap = after_subst->termArg(0) != leftSubst;
-  if(need_swap) {
+  Literal *after = transform(literal);
+  TermList leftAfter = transform(literal->termArg(0));
+  TermList rightAfter = transform(literal->termArg(1));
+  bool need_commute = after->termArg(0) != leftAfter || after->termArg(1) != rightAfter;
+  if(need_commute) {
     out << "(comml ";
-    outputTermList(out, rightSubst, care);
+    outputTerm(out, rightAfter, care);
     out << " ";
-    outputTermList(out, leftSubst, care);
+    outputTerm(out, leftAfter, care);
     out << " ";
   }
-  out << after_subst;
-  if(need_swap)
+  out << after;
+  if(need_commute)
     out << ")";
 }
 
@@ -374,12 +448,12 @@ static void outputResolution(std::ostream &out, Clause *derived) {
 
   for(unsigned v : leftVars) {
     out << " ";
-    outputTermList(out, subst.apply(TermList(v, false), 0), care);
+    outputTerm(out, subst.apply(TermList(v, false), 0), care);
   }
   unsigned litLeft;
   for(litLeft = 0; litsLeft[litLeft] != selectedLeft; litLeft++) {
     out << " ";
-    outputSubstitutedLiteralPtr(out, subst, 0, litsLeft[litLeft], care);
+    outputLiteralPtr(out, litsLeft[litLeft], care, DoSubstitution0(subst));
   }
 
   const char *tp = "tp", *tnp = "tnp";
@@ -391,12 +465,12 @@ static void outputResolution(std::ostream &out, Clause *derived) {
   out << ") => " << "deduction" << right->number();
   for(unsigned v : rightVars) {
     out << " ";
-    outputTermList(out, subst.apply(TermList(v, false), 1), care);
+    outputTerm(out, subst.apply(TermList(v, false), 1), care);
   }
   unsigned litRight;
   for(litRight = 0; litsRight[litRight] != selectedRight; litRight++) {
     out << " ";
-    outputSubstitutedLiteralPtr(out, subst, 1, litsRight[litRight], care);
+    outputLiteralPtr(out, litsRight[litRight], care, DoSubstitution1(subst));
   }
   out << " (" << tnp << ": Prf ";
   outputLiteral(out, rightSelectedSubst, care);
@@ -405,12 +479,12 @@ static void outputResolution(std::ostream &out, Clause *derived) {
   out << ")";
   for(litRight++; litRight < litsRight.size(); litRight++) {
     out << " ";
-    outputSubstitutedLiteralPtr(out, subst, 1, litsRight[litRight], care);
+    outputLiteralPtr(out, litsRight[litRight], care, DoSubstitution1(subst));
   }
   out << ")";
   for(litLeft++; litLeft < litsLeft.size(); litLeft++) {
     out << " ";
-    outputSubstitutedLiteralPtr(out, subst, 0, litsLeft[litLeft], care);
+    outputLiteralPtr(out, litsLeft[litLeft], care, DoSubstitution0(subst));
   }
 }
 
@@ -422,31 +496,33 @@ static void outputSuperposition(std::ostream &out, Clause *derived) {
 
   // compute unifier for selected literals
   RobSubstitution subst;
-  Literal *selectedLeft = sup.selected.selectedLiteral.selectedLiteral;
-  Literal *selectedRight = sup.selected.otherLiteral;
+  Literal *leftSelected = sup.selected.selectedLiteral.selectedLiteral;
+  Literal *rightSelected = sup.selected.otherLiteral;
   TermList from = sup.rewrite.lhs;
-  TermList to = EqHelper::getOtherEqualitySide(selectedRight, from);
-  bool fromisLHS = selectedRight->termArg(0) == from;
+  TermList to = EqHelper::getOtherEqualitySide(rightSelected, from);
+  bool fromisLHS = rightSelected->termArg(0) == from;
   TermList target = sup.rewrite.target;
-  ASS(selectedRight->isEquality())
-  ASS(selectedRight->isPositive())
-  ASS(selectedRight->termArg(0) == from || selectedRight->termArg(1) == from)
+  ASS(rightSelected->isEquality())
+  ASS(rightSelected->isPositive())
+  ASS(rightSelected->termArg(0) == from || rightSelected->termArg(1) == from)
   ALWAYS(subst.unify(target, 0, from, 1))
 
   // apply subst to all of the parent literals in the same order as Superposition does it
   // this will, I fervently hope, ensure that output variables are mapped in the same way
+  subst.apply(to, 1);
+  subst.apply(leftSelected, 0);
+  subst.apply(target, 0);
+  subst.apply(from, 1);
   for(unsigned i = 0; i < left->length(); i++)
-    if((*left)[i] != selectedLeft)
+    if((*left)[i] != leftSelected)
       subst.apply((*left)[i], 0);
   for(unsigned i = 0; i < right->length(); i++)
-    if((*right)[i] != selectedRight)
+    if((*right)[i] != rightSelected)
       subst.apply((*right)[i], 1);
 
   // now also apply subst to the selected literals because we need it later
-  Literal *leftSelectedSubst = subst.apply(selectedLeft, 0);
   TermList fromSubst = subst.apply(from, 1);
   TermList toSubst = subst.apply(to, 1);
-  Literal *leftSelectedSubstRewritten = EqHelper::replace(leftSelectedSubst, fromSubst, toSubst);
 
   // canonicalise order of literals in all clauses
   auto derivedLits = canonicalise(derived);
@@ -464,76 +540,71 @@ static void outputSuperposition(std::ostream &out, Clause *derived) {
 
   // bind variables present in the derived clause
   for(unsigned v : derivedVars)
-    out << " " << v << " : El iota => ";
+    out << " " << v << " : El iota =>";
   // bind literals in the derived clause
   for(unsigned i = 0; i < derivedLits.size(); i++) {
     Literal *l = derivedLits[i];
-    out << "" << l << " : (Prf ";
+    out << " " << l << " : (Prf ";
     outputLiteral(out, l, care);
-    out << " -> Prf false) => ";
+    out << " -> Prf false) =>";
   }
 
   // construct the proof term: refer to
   // "A Shallow Embedding of Resolution and Superposition Proofs into the λΠ-Calculus Modulo"
   // Guillaume Burel
-  out << "deduction" << left->number();
+  out << " deduction" << left->number();
 
   for(unsigned v : leftVars) {
     out << " ";
-    outputTermList(out, subst.apply(TermList(v, false), 0), care);
+    outputTerm(out, subst.apply(TermList(v, false), 0), care);
   }
   unsigned litLeft;
-  for(litLeft = 0; litsLeft[litLeft] != selectedLeft; litLeft++) {
+  for(litLeft = 0; litsLeft[litLeft] != leftSelected; litLeft++) {
     out << " ";
-    outputSubstitutedLiteralPtr(out, subst, 0, litsLeft[litLeft], care);
+    outputLiteralPtr(out, litsLeft[litLeft], care, DoSubstitution0(subst));
   }
 
-  // TODO q could also be one of the swappy things under the substitution
-  // life is pain
   out << " (q : (Prf (";
-  outputLiteral(out, leftSelectedSubst, care);
+  outputLiteral(out, leftSelected, care, DoSubstitution0(subst));
   out << ")) => deduction" << right->number();
 
   for(unsigned v : rightVars) {
     out << " ";
-    outputTermList(out, subst.apply(TermList(v, false), 1), care);
+    outputTerm(out, subst.apply(TermList(v, false), 1), care);
   }
   unsigned litRight;
-  for(litRight = 0; litsRight[litRight] != selectedRight; litRight++) {
+  for(litRight = 0; litsRight[litRight] != rightSelected; litRight++) {
     out << " ";
-    outputSubstitutedLiteralPtr(out, subst, 1, litsRight[litRight], care);
+    outputLiteralPtr(out, litsRight[litRight], care, DoSubstitution1(subst));
   }
 
-  out << " (r : (Prf (eq ";
-  outputTermList(out, subst.apply(selectedRight->termArg(0), 1), care);
-  out << " ";
-  outputTermList(out, subst.apply(selectedRight->termArg(1), 1), care);
-  out << ")) => "  << leftSelectedSubstRewritten << " (";
+  out << " (r : (Prf ";
+  outputLiteral(out, rightSelected, care, DoSubstitution1(subst));
+  out << ") => ";
+  outputLiteralPtr(out, leftSelected, care, DoSubstitution0(subst).then(DoReplacement(fromSubst, toSubst)));
+  out << " (";
 
-  if(fromisLHS)
-    out << "r";
-  else {
-    out << "(comm ";
-    outputTermList(out, subst.apply(to, 1), care);
+  if(!fromisLHS) {
+    out << "comm ";
+    outputTerm(out, toSubst, care);
     out << " ";
-    outputTermList(out, subst.apply(from, 1), care);
-    out << " r)";
+    outputTerm(out, fromSubst, care);
+    out << " ";
   }
-  out << " (z : (El iota) => ";
+  out << "r (z : (El iota) => ";
 
   TermList z(0, true);
-  Literal *replaced = EqHelper::replace(leftSelectedSubst, subst.apply(from, 1), z);
-  outputLiteral(out, replaced, care);
+  outputLiteral(out, leftSelected, care, DoSubstitution0(subst).then(DoReplacement(fromSubst, z)));
   out << ") q))";
 
   for(litRight++; litRight < litsRight.size(); litRight++) {
     out << " ";
-    outputSubstitutedLiteralPtr(out, subst, 1, litsRight[litRight], care);
+    outputLiteralPtr(out, litsRight[litRight], care, DoSubstitution1(subst));
   }
   out << ")";
   for(litLeft++; litLeft < litsLeft.size(); litLeft++) {
     out << " ";
-    outputSubstitutedLiteralPtr(out, subst, 0, litsLeft[litLeft], care);
+    outputLiteralPtr(out, litsLeft[litLeft], care, DoSubstitution0(subst));
   }
 }
 
@@ -587,23 +658,23 @@ static void outputEqualityResolution(std::ostream &out, Clause *derived) {
 
   for(unsigned v : parentVars) {
     out << " ";
-    outputTermList(out, subst.apply(TermList(v, false), 0), care);
+    outputTerm(out, subst.apply(TermList(v, false), 0), care);
   }
   unsigned lit;
   for(lit = 0; litsParent[lit] != selected; lit++) {
     out << " ";
-    outputSubstitutedLiteralPtr(out, subst, 0, litsParent[lit], care);
+    outputLiteralPtr(out, litsParent[lit], care, DoSubstitution0(subst));
   }
 
   out << " (p : Prf (";
   outputLiteral(out, subst.apply(selected, 0), care);
   out << ") => p (refl ";
-  outputTermList(out, subst.apply(s, 0), care);
+  outputTerm(out, subst.apply(s, 0), care);
   out << "))";
 
   for(lit++; lit < litsParent.size(); lit++) {
     out << " ";
-    outputSubstitutedLiteralPtr(out, subst, 0, litsParent[lit], care);
+    outputLiteralPtr(out, litsParent[lit], care, DoSubstitution0(subst));
   }
 }
 
