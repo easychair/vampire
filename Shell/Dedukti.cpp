@@ -534,7 +534,7 @@ static void outputSuperposition(std::ostream &out, Clause *derived) {
   TermList from = sup.rewrite.lhs;
   TermList to = EqHelper::getOtherEqualitySide(rightSelected, from);
   bool fromisLHS = rightSelected->termArg(0) == from;
-  TermList target = sup.rewrite.target;
+  TermList target = sup.rewrite.rewritten;
   ASS(rightSelected->isEquality())
   ASS(rightSelected->isPositive())
   ASS(rightSelected->termArg(0) == from || rightSelected->termArg(1) == from)
@@ -670,7 +670,7 @@ static void outputDemodulation(std::ostream &out, Clause *derived) {
   // compute unifier for selected literals
   SimpleSubstitution subst;
   Literal *rightLit = (*right)[0];
-  TermList target = rw.target;
+  TermList target = rw.rewritten;
   TermList from = isDemodulatorFor(rightLit, target)
     ? (*rightLit)[0]
     : (*rightLit)[1];
