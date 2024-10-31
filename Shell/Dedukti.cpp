@@ -22,8 +22,11 @@
 #include "Parse/TPTP.hpp"
 
 #include "Inferences/BinaryResolution.hpp"
-#include "Inferences/Superposition.hpp"
 #include "Inferences/EqualityResolution.hpp"
+#include "Inferences/Factoring.hpp"
+#include "Inferences/Superposition.hpp"
+
+#include "SATSubsumption/SATSubsumptionAndResolution.hpp"
 
 #include <array>
 #include <set>
@@ -97,26 +100,6 @@ def Prf_clause : (clause -> Type).
 (;----------------------------------------------------------------------------;)
 
 )";
-
-// a variable-term map that complies with the requirements for MatchingUtils and SubstHelper
-struct SimpleSubstitution
-{
-  std::unordered_map<unsigned, TermList> bindings;
-
-  TermList apply(unsigned var) {
-    if(auto bound = bindings.find(var); bound != bindings.end())
-      return bound->second;
-    return TermList(var, false);
-  }
-
-  bool bind(unsigned var, TermList term)
-  {
-    auto [it, inserted] = bindings.insert({var, term});
-    return inserted || it->second == term;
-  }
-
-  void specVar(unsigned var, TermList term) { ASSERTION_VIOLATION; }
-};
 
 using namespace Kernel;
 
@@ -303,6 +286,37 @@ static void outputLiteral(
   outputTerm(out, transform(literal->termArg(1)), care);
   out << ")";
   if(!literal->polarity())
+    out << ")";
+}
+
+template<typename Transform, typename Care>
+static void outputLiteralName(
+  std::ostream &out,
+  Literal *literal,
+  const char *name,
+  const char *comm,
+  Care care,
+  Transform transform
+) {
+  if(!literal->isEquality()) {
+    out << name;
+    return;
+  }
+
+  Literal *after = transform(literal);
+  TermList leftAfter = transform(literal->termArg(0));
+  TermList rightAfter = transform(literal->termArg(1));
+  bool need_commute = after->termArg(0) != leftAfter || after->termArg(1) != rightAfter;
+  if(need_commute) {
+    out << "(" << comm << " ";
+    // TODO this is switched with respect to `outputLiteralPtr` - come up with some nice abstraction for this
+    outputTerm(out, leftAfter, care);
+    out << " ";
+    outputTerm(out, rightAfter, care);
+    out << " ";
+  }
+  out << name;
+  if(need_commute)
     out << ")";
 }
 
@@ -519,6 +533,120 @@ static void outputResolution(std::ostream &out, Clause *derived) {
   for(litLeft++; litLeft < litsLeft.size(); litLeft++) {
     out << " ";
     outputLiteralPtr(out, litsLeft[litLeft], care, DoRobSubstitution0(subst));
+  }
+}
+
+static void outputSubsumptionResolution(std::ostream &out, Clause *derived) {
+  outputDeductionPrefix(out, derived);
+  auto [left, right] = getParents<2>(derived);
+  auto sr = env.proofExtra.get<Inferences::LiteralInferenceExtra>(derived);
+  Literal *m = sr.selectedLiteral;
+
+  // reconstruct match by calling into the SATSR code
+  SATSubsumption::SATSubsumptionAndResolution satSR;
+  ALWAYS(satSR.checkSubsumptionResolutionWithLiteral(right, left, left->getLiteralPosition(m)))
+  auto subst = satSR.getBindingsForSubsumptionResolutionWithLiteral();
+
+  // canonicalise order of literals in all clauses
+  auto derivedLits = canonicalise(derived);
+  auto litsLeft = canonicalise(left);
+  auto litsRight = canonicalise(right);
+
+  // variables in numerical order
+  auto derivedVars = variables(derived);
+  auto leftVars = variables(left);
+  auto rightVars = variables(right);
+
+  // for variables in the substitution that do not appear in the output
+  // consider e.g. p(X) and ~p(Y): X -> Y, but output is $false and has no variables
+  auto care = [&](unsigned var) -> bool { return derivedVars.count(var); };
+
+  // bind variables present in the derived clause
+  for(unsigned v : derivedVars)
+    out << " " << v << " : El iota => ";
+  // bind literals in the derived clause
+  for(unsigned i = 0; i < derivedLits.size(); i++) {
+    Literal *l = derivedLits[i];
+    out << " " << l << " : (Prf ";
+    outputLiteral(out, l, care);
+    out << " -> Prf false) => ";
+  }
+
+  // construct the proof term: refer to
+  // "A Shallow Embedding of Resolution and Superposition Proofs into the λΠ-Calculus Modulo"
+  // Guillaume Burel
+  //
+  // TODO this should be more or less the 'resolution' term, but with multiple tnp/tp lambdas factored out
+  // Anja is a smart cookie
+  out << "deduction" << left->number();
+
+  for(unsigned v : leftVars) {
+    out << " ";
+    outputVar(out, v, false, care);
+  }
+
+  // TODO can we make this case distinction less unpleasant?
+  if(m->isPositive()) {
+    for(Literal *l : litsLeft) {
+      out << " ";
+      if(l != m) {
+        out << l;
+        continue;
+      }
+
+      out << "(tp: (Prf ";
+      outputLiteral(out, m, care);
+      out << ") => " << "deduction" << right->number();
+      for(unsigned v : rightVars) {
+        out << " ";
+        outputTerm(out, SubstHelper::apply(TermList(v, false), subst), care);
+      }
+      for(Literal *k : litsRight) {
+        out << " ";
+        Literal *ksubst = SubstHelper::apply(k, subst);
+        if(Literal::complementaryLiteral(ksubst) != m) {
+          outputLiteralPtr(out, k, care, DoSubstitution(subst));
+          continue;
+        }
+        out << "(tnp: Prf ";
+        outputLiteral(out, k, care, DoSubstitution(subst));
+        out << " => (";
+        outputLiteralName(out, k, "tnp", "comml", care, DoSubstitution(subst));
+        out << " tp))";
+      }
+      out << ")";
+    }
+  }
+  else {
+    for(Literal *l : litsLeft) {
+      out << " ";
+      if(l != m) {
+        out << l;
+        continue;
+      }
+
+      out << "(tnp: (Prf ";
+      outputLiteral(out, m, care);
+      out << ") => " << "deduction" << right->number();
+      for(unsigned v : rightVars) {
+        out << " ";
+        outputTerm(out, SubstHelper::apply(TermList(v, false), subst), care);
+      }
+      for(Literal *k : litsRight) {
+        out << " ";
+        Literal *ksubst = SubstHelper::apply(k, subst);
+        if(Literal::complementaryLiteral(ksubst) != m) {
+          outputLiteralPtr(out, k, care, DoSubstitution(subst));
+          continue;
+        }
+        out << "(tp: Prf ";
+        outputLiteral(out, k, care, DoSubstitution(subst));
+        out << " => (tnp ";
+        outputLiteralName(out, k, "tp", "comm", care, DoSubstitution(subst));
+        out << "))";
+      }
+      out << ")";
+    }
   }
 }
 
@@ -759,6 +887,57 @@ static void outputDemodulation(std::ostream &out, Clause *derived) {
   }
 }
 
+static void outputTrivialInequalityRemoval(std::ostream &out, Clause *derived) {
+  outputDeductionPrefix(out, derived);
+  auto [parent] = getParents<1>(derived);
+
+  // canonicalise order of literals in all clauses
+  auto derivedLits = canonicalise(derived);
+  auto litsParent = canonicalise(parent);
+
+  // variables in numerical order
+  auto derivedVars = variables(derived);
+  auto parentVars = variables(parent);
+
+  // for variables in the substitution that do not appear in the output
+  // consider e.g. p(X) and ~p(Y): X -> Y, but output is $false and has no variables
+  auto care = [&](unsigned var) -> bool { return derivedVars.count(var); };
+
+  // bind variables present in the derived clause
+  for(unsigned v : derivedVars)
+    out << " " << v << " : El iota => ";
+  // bind literals in the derived clause
+  for(unsigned i = 0; i < derivedLits.size(); i++) {
+    Literal *l = derivedLits[i];
+    out << "" << l << " : (Prf ";
+    outputLiteral(out, l, care);
+    out << " -> Prf false) => ";
+  }
+
+  // construct the proof term: refer to
+  // "A Shallow Embedding of Resolution and Superposition Proofs into the λΠ-Calculus Modulo"
+  // Guillaume Burel
+  out << "deduction" << parent->number();
+
+  for(unsigned v : parentVars) {
+    out << " ";
+    outputVar(out, v, false, care);
+  }
+  for(Literal *l : litsParent) {
+    out << " ";
+    if(l->polarity() || !l->isEquality() || l->termArg(0) != l->termArg(1)) {
+      out << l;
+      continue;
+    }
+    out << "(p : Prf (";
+    outputLiteral(out, l, care);
+    out << ") => p (refl ";
+    outputTerm(out, l->termArg(0), care);
+    out << "))";
+  }
+}
+
+
 static void outputEqualityResolution(std::ostream &out, Clause *derived) {
   outputDeductionPrefix(out, derived);
 
@@ -829,6 +1008,97 @@ static void outputEqualityResolution(std::ostream &out, Clause *derived) {
   }
 }
 
+static void outputDuplicateLiteral(std::ostream &out, Clause *derived) {
+  outputDeductionPrefix(out, derived);
+  auto [parent] = getParents<1>(derived);
+
+  // canonicalise order of literals in all clauses
+  auto derivedLits = canonicalise(derived);
+  auto litsParent = canonicalise(parent);
+
+  // variables in numerical order
+  auto vars = variables(derived);
+
+  // bind variables present in the derived clause
+  for(unsigned v : vars)
+    out << " " << v << " : El iota => ";
+  // bind literals in the derived clause
+  for(Literal *l : derivedLits) {
+    out << "" << l << " : (Prf ";
+    outputLiteral(out, l, AlwaysCare {});
+    out << " -> Prf false) => ";
+  }
+
+  // construct the proof term: refer to
+  // "A Shallow Embedding of Resolution and Superposition Proofs into the λΠ-Calculus Modulo"
+  // Guillaume Burel
+  out << "deduction" << parent->number();
+
+  for(unsigned v : vars) {
+    out << " ";
+    outputVar(out, v, false, AlwaysCare {});
+  }
+  for(Literal *l : litsParent)
+    out << " " << l;
+}
+
+static void outputFactoring(std::ostream &out, Clause *derived) {
+  outputDeductionPrefix(out, derived);
+
+  auto [parent] = getParents<1>(derived);
+  const auto &fact = env.proofExtra.get<Inferences::FactoringExtra>(derived);
+
+  // compute unifier for selected literal
+  RobSubstitution subst;
+  Literal *selected = fact.selectedLiteral.selectedLiteral;
+  Literal *other = fact.otherLiteral;
+  ASS_EQ(selected->polarity(), other->polarity())
+  ASS_EQ(selected->functor(), other->functor())
+  ALWAYS(subst.unify(TermList(selected), 0, TermList(other), 0));
+
+  // apply subst to all of the parent literals in the same order as Factoring does it
+  // this will, I fervently hope, ensure that output variables are mapped in the same way
+  for(Literal *l : parent->iterLits())
+    if(l != other)
+      subst.apply(l, 0);
+
+  // canonicalise order of literals in all clauses
+  auto derivedLits = canonicalise(derived);
+  auto litsParent = canonicalise(parent);
+
+  // variables in numerical order
+  auto derivedVars = variables(derived);
+  auto parentVars = variables(parent);
+
+  // for variables in the substitution that do not appear in the output
+  // consider e.g. p(X) and ~p(Y): X -> Y, but output is $false and has no variables
+  auto care = [&](unsigned var) -> bool { return derivedVars.count(var); };
+
+  // bind variables present in the derived clause
+  for(unsigned v : derivedVars)
+    out << " " << v << " : El iota => ";
+  // bind literals in the derived clause
+  for(unsigned i = 0; i < derivedLits.size(); i++) {
+    Literal *l = derivedLits[i];
+    out << "" << l << " : (Prf ";
+    outputLiteral(out, l, care);
+    out << " -> Prf false) => ";
+  }
+
+  // construct the proof term: refer to
+  // "A Shallow Embedding of Resolution and Superposition Proofs into the λΠ-Calculus Modulo"
+  // Guillaume Burel
+  out << "deduction" << parent->number();
+
+  for(unsigned v : parentVars) {
+    out << " ";
+    outputTerm(out, subst.apply(TermList(v, false), 0), care);
+  }
+  for(Literal *l : litsParent) {
+    out << " ";
+    outputLiteralPtr(out, l, care, DoRobSubstitution0(subst));
+  }
+}
 
 namespace Shell {
 namespace Dedukti {
@@ -891,6 +1161,18 @@ void outputDeduction(std::ostream &out, Unit *u) {
     break;
   case InferenceRule::RESOLUTION:
     outputResolution(out, u->asClause());
+    break;
+  case InferenceRule::REMOVE_DUPLICATE_LITERALS:
+    outputDuplicateLiteral(out, u->asClause());
+    break;
+  case InferenceRule::FACTORING:
+    outputFactoring(out, u->asClause());
+    break;
+  case InferenceRule::SUBSUMPTION_RESOLUTION:
+    outputSubsumptionResolution(out, u->asClause());
+    break;
+  case InferenceRule::TRIVIAL_INEQUALITY_REMOVAL:
+    outputTrivialInequalityRemoval(out, u->asClause());
     break;
   case InferenceRule::EQUALITY_RESOLUTION:
     outputEqualityResolution(out, u->asClause());

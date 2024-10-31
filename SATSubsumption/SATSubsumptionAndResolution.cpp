@@ -69,6 +69,7 @@
    */
 
 #include "Kernel/Matcher.hpp"
+#include "Kernel/SubstHelper.hpp"
 #include "Lib/Environment.hpp"
 #include "Lib/Int.hpp"
 #include "Shell/Statistics.hpp"
@@ -968,4 +969,27 @@ bool SATSubsumption::SATSubsumptionAndResolution::checkSubsumptionResolutionWith
 
   _model.clear();
   return (_solver.solve() == subsat::Result::Sat);
+}
+
+SimpleSubstitution SATSubsumption::SATSubsumptionAndResolution::getBindingsForSubsumptionResolutionWithLiteral()
+{
+  SimpleSubstitution subst;
+  _solver.get_model(_model);
+  for(auto lit : _model) {
+    if(lit.is_negative())
+      continue;
+    // there could be non-match vars with the (only existing) indirect encoding
+    if(!_matchSet.isMatchVar(lit.var()))
+      continue;
+    // extra guard for below
+    if(lit.var().index() >= _bindingsManager.size())
+      continue;
+    auto b = _bindingsManager.get_bindings(lit.var());
+    // TODO put a bit in the Match to indicate which way an equation is oriented
+    for(auto binding_index = b.index; binding_index < b.end(); binding_index++) {
+      auto [var, term] = _bindingsManager.get_single_binding(binding_index);
+      ALWAYS(subst.bind(var, term))
+    }
+  }
+  return subst;
 }
