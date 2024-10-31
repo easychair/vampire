@@ -15,6 +15,7 @@
 #define SAT_SUBSUMPTION_RESOLUTION_HPP
 
 #include "Kernel/Clause.hpp"
+#include "Kernel/SubstHelper.hpp"
 #include "Lib/Slice.hpp"
 
 #include "./subsat/subsat.hpp"
@@ -508,6 +509,10 @@ public:
   bool checkSubsumptionResolutionWithLiteral(Kernel::Clause *L,
                                              Kernel::Clause *M,
                                              unsigned resolutionLiteral);
+
+  // return the substitution required for the last subsumption resolution
+  // precondition: the last subsumption resolution succeeded
+  SimpleSubstitution getBindingsForSubsumptionResolutionWithLiteral();
 
   /**
    * Creates a clause that is the subsumption resolution of @b M and @b L on @b m_j.

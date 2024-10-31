@@ -663,4 +663,24 @@ inline TermList AppliedTerm::apply() const {
                   : term;
 }
 
+// a variable-term map that complies with the requirements for MatchingUtils and SubstHelper
+struct SimpleSubstitution
+{
+  std::unordered_map<unsigned, TermList> bindings;
+
+  TermList apply(unsigned var) {
+    if(auto bound = bindings.find(var); bound != bindings.end())
+      return bound->second;
+    return TermList(var, false);
+  }
+
+  bool bind(unsigned var, TermList term)
+  {
+    auto [it, inserted] = bindings.insert({var, term});
+    return inserted || it->second == term;
+  }
+
+  void specVar(unsigned var, TermList term) { ASSERTION_VIOLATION; }
+};
+
 #endif /* __SubstHelper__ */

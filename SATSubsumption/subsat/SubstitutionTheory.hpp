@@ -20,7 +20,6 @@
 #include "Kernel/Term.hpp"
 #include "Lib/DHMap.hpp"
 
-
 namespace subsat {
 
 
@@ -209,6 +208,10 @@ public:
   {
     m_bindings_storage.reserve(bool_var_count * bindings_per_bool_var);
     m_bindings.reserve(bool_var_count);
+  }
+
+  std::pair<VampireVar, VampireTerm> get_single_binding(uint32_t index) {
+    return m_bindings_storage[index];
   }
 
   friend class SubstitutionTheory;
