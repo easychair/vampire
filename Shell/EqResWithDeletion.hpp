@@ -19,8 +19,11 @@
 #include "Forwards.hpp"
 
 #include "Lib/DHMap.hpp"
+#include "Lib/ProofExtra.hpp"
 
 #include "Kernel/Term.hpp"
+
+#include <unordered_set>
 
 namespace Shell {
 
@@ -44,6 +47,12 @@ private:
    * (It is reset with each clause). */
   DHMap<unsigned, TermList, IdentityHash, DefaultHash> _subst;
   Literal* _ansLit = nullptr;
+};
+
+struct EqResWithDeletionExtra : public InferenceExtra {
+  std::unordered_set<Literal *> resolved;
+  EqResWithDeletionExtra(std::unordered_set<Literal *> resolved) : resolved(resolved) {}
+  void output(std::ostream &out) const override;
 };
 
 };
