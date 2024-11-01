@@ -77,10 +77,13 @@ start_applying:
   RStack<Literal*> resLits;
 
   bool foundResolvable=false;
+  std::unordered_set<Literal *> resolved;
   for(unsigned i=0;i<clen;i++) {
     Literal* lit=(*cl)[i];
     if(!foundResolvable && scan(lit)) {
       foundResolvable=true;
+      if(env.options->proofExtra() == Options::ProofExtra::FULL)
+        resolved.insert(lit);
     } else {
       resLits->push(lit);
     }
@@ -95,6 +98,8 @@ start_applying:
 
   cl = Clause::fromStack(*resLits,
       SimplifyingInference1(InferenceRule::EQUALITY_RESOLUTION_WITH_DELETION, cl));
+  if(env.options->proofExtra() == Options::ProofExtra::FULL)
+    env.proofExtra.insert(cl, new EqResWithDeletionExtra(std::move(resolved)));
   goto start_applying;
 }
 
@@ -127,6 +132,18 @@ bool EqResWithDeletion::scan(Literal* lit)
     }
   }
   return false;
+}
+
+void EqResWithDeletionExtra::output(std::ostream &out) const {
+  bool first = true;
+  out << "resolved=[";
+  for(Literal *l : resolved) {
+    if(!first)
+      out << ",";
+    first = false;
+    out << "(" << l->toString() << ")";
+  }
+  out << "]";
 
 }
 

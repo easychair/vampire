@@ -20,7 +20,6 @@
 
 #include "InferenceEngine.hpp"
 #include "Inferences/ProofExtra.hpp"
-#include "Shell/Options.hpp"
 
 namespace Inferences {
 
