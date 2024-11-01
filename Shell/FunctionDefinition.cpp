@@ -37,6 +37,7 @@
 
 #include "FunctionDefinition.hpp"
 
+#include <algorithm>
 #if VDEBUG
 #include <iostream>
 #endif
@@ -64,6 +65,7 @@ struct FunctionDefinition::Def
   /** Unit containing a definition */
   Clause* defCl;
   /** The defined function symbol number */
+
   int fun;
   /** The lhs of the definition */
   Term* lhs;
@@ -717,12 +719,19 @@ Clause* FunctionDefinition::applyDefinitions(Clause* cl)
   }
 
   UnitList* premises=0;
+  std::vector<Term *> extra;
   while(usedDefs.isNonEmpty()) {
-    Clause* defCl=usedDefs.pop()->defCl;
+    Def *def = usedDefs.pop();
+    Clause* defCl=def->defCl;
     UnitList::push(defCl, premises);
+    if(env.options->proofExtra() == Options::ProofExtra::FULL)
+      extra.push_back(def->lhs);
   }
+  std::reverse(extra.begin(), extra.end());
   UnitList::push(cl, premises);
   auto res = Clause::fromStack(*resLits, NonspecificInferenceMany(InferenceRule::DEFINITION_UNFOLDING, premises));
+  if(env.options->proofExtra() == Options::ProofExtra::FULL)
+    env.proofExtra.insert(res, new FunctionDefinitionExtra(std::move(extra)));
   res->setAge(cl->age()); // TODO isn't this dones automatically?
   return res;
 }
@@ -961,5 +970,16 @@ void FunctionDefinition::deleteDef (Def* def)
   delete def;
 } // FunctionDefinition::deleteDef
 
+void FunctionDefinitionExtra::output(std::ostream &out) const {
+  bool first = true;
+  out << "inlined=[";
+  for(Term *t : lhs) {
+    if(!first)
+      out << ",";
+    first = false;
+    out << t->toString();
+  }
+  out << "]";
+}
 
 }

@@ -29,6 +29,7 @@
 
 #include "Lib/DHMap.hpp"
 #include "Lib/MultiCounter.hpp"
+#include "Lib/ProofExtra.hpp"
 #include "Lib/Stack.hpp"
 #include "Kernel/Unit.hpp"
 
@@ -114,6 +115,11 @@ private:
   Problem* _processedProblem;
 }; // class FunctionDefinition
 
+struct FunctionDefinitionExtra : public InferenceExtra {
+  std::vector<Term *> lhs;
+  FunctionDefinitionExtra(std::vector<Term *> lhs) : lhs(lhs) {}
+  void output(std::ostream &out) const override;
+};
 
 }
 
