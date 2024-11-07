@@ -19,17 +19,21 @@
 #include "Kernel/EqHelper.hpp"
 #include "Kernel/Matcher.hpp"
 #include "Kernel/RobSubstitution.hpp"
+#include "Kernel/SubstHelper.hpp"
+#include "Kernel/TermIterators.hpp"
 #include "Parse/TPTP.hpp"
 
 #include "Inferences/BinaryResolution.hpp"
 #include "Inferences/EqualityResolution.hpp"
 #include "Inferences/Factoring.hpp"
 #include "Inferences/Superposition.hpp"
+#include "Shell/FunctionDefinition.hpp"
 
 #include "SATSubsumption/SATSubsumptionAndResolution.hpp"
 
 #include <array>
 #include <set>
+#include <sstream>
 
 using namespace Inferences;
 
@@ -436,6 +440,21 @@ std::array<T *, N> getParents(T *unit) {
   }
   ALWAYS(!it.hasNext())
   return parents;
+}
+
+// get N parents of a unit
+template<unsigned N, typename T>
+std::pair<std::array<T *, N>, std::vector<T *>> getParentsVariadic(T *unit) {
+  std::array<T *, N> parents;
+  UnitIterator it = unit->getParents();
+  for(unsigned i = 0; i < N; i++) {
+    ALWAYS(it.hasNext())
+    parents[i] = static_cast<T *>(it.next());
+  }
+  std::vector<T *> rest;
+  while(it.hasNext())
+    rest.push_back(static_cast<T *>(it.next()));
+  return {parents, rest};
 }
 
 static void outputResolution(std::ostream &out, Clause *derived) {
@@ -887,6 +906,110 @@ static void outputDemodulation(std::ostream &out, Clause *derived) {
   }
 }
 
+static void outputDefinitionUnfolding(std::ostream &out, Clause *derived) {
+  outputDeductionPrefix(out, derived);
+  auto [parents, defs] = getParentsVariadic<1>(derived);
+  auto [parent] = parents;
+  const auto &rw = env.proofExtra.get<Inferences::FunctionDefinitionExtra>(derived);
+
+  // canonicalise order of literals
+  auto derivedLits = canonicalise(derived);
+  auto parentLits = canonicalise(parent);
+  // variables in numerical order
+  auto derivedVars = variables(derived);
+  auto parentVars = variables(parent);
+
+  // for variables in the substitution that do not appear in the output
+  // consider e.g. p(X) and ~p(Y): X -> Y, but output is $false and has no variables
+  auto care = [&](unsigned var) -> bool { return derivedVars.count(var); };
+
+  // bind variables present in the derived clause
+  for(unsigned v : derivedVars)
+    out << " " << v << " : El iota =>";
+  // bind literals in the derived clause
+  for(unsigned i = 0; i < derivedLits.size(); i++) {
+    Literal *l = derivedLits[i];
+    out << " " << l << " : (Prf ";
+    outputLiteral(out, l, care);
+    out << " -> Prf false) =>";
+  }
+
+  out << " deduction" << parent->number();
+  for(unsigned v : derivedVars) {
+    out << " ";
+    outputVar(out, v, false, care);
+  }
+
+  std::unordered_map<unsigned, unsigned> rewrites;
+  for(unsigned i = 0; i < defs.size(); i++)
+    rewrites.insert({rw.lhs[i]->functor(), i});
+
+  std::vector<std::string> after;
+  for(Literal *l : parentLits) {
+restart:
+    out << " (t_" << l << " : Prf ";
+    outputLiteral(out, l, care);
+    out << " =>";
+    NonVariableIterator subterms(l);
+    while(subterms.hasNext()) {
+      Term *candidate = subterms.next().term();
+      if(auto found = rewrites.find(candidate->functor()); found != rewrites.end()) {
+        auto [_, i] = *found;
+        Clause *def = defs[i];
+        Literal *eq = (*def)[0];
+        TermList lhs(rw.lhs[i]);
+        TermList rhs = EqHelper::getOtherEqualitySide(eq, lhs);
+        SimpleSubstitution subst;
+        ALWAYS(MatchingUtils::matchTerms(TermList(lhs), TermList(candidate), subst))
+        TermList lhsSubst(SubstHelper::apply(lhs, subst));
+        TermList rhsSubst = SubstHelper::apply(rhs, subst);
+        out << " deduction" << def->number();
+
+        auto defVars = variables(def);
+        for(unsigned v : defVars) {
+          out << " ";
+          outputTerm(out, subst.apply(v), care);
+        }
+        out << " (e_" << eq << " : Prf ";
+        outputLiteral(out, eq, care, DoSubstitution(subst));
+        out << " => ";
+
+        std::stringstream deferred;
+        deferred << " (";
+        if(eq->termArg(0) == lhs)
+          deferred << "e_" << eq;
+        else {
+          deferred << "(comm ";
+          outputTerm(
+            deferred,
+            SubstHelper::apply(eq->termArg(0), subst),
+            care
+          );
+          deferred << " ";
+          outputTerm(
+            deferred,
+            SubstHelper::apply(eq->termArg(1), subst),
+            care
+          );
+          deferred << " e_" << eq << ")";
+        }
+        deferred << " (z : El iota => ";
+        outputLiteral(deferred, l, care, DoReplacement(lhsSubst, TermList(0, true)));
+        deferred << ") t_" << l << ")))";
+        after.push_back(deferred.str());
+
+        l = EqHelper::replace(l, lhsSubst, rhsSubst);
+        goto restart;
+      }
+    }
+    out << " " << l << " t_" << l << ")";
+    while(!after.empty()) {
+      out << after.back();
+      after.pop_back();
+    }
+  }
+}
+
 static void outputTrivialInequalityRemoval(std::ostream &out, Clause *derived) {
   outputDeductionPrefix(out, derived);
   auto [parent] = getParents<1>(derived);
@@ -1158,6 +1281,9 @@ void outputDeduction(std::ostream &out, Unit *u) {
     outputAxiom(out, u);
     outputDeductionPrefix(out, u);
     outputAxiomName(out, u);
+    break;
+  case InferenceRule::DEFINITION_UNFOLDING:
+    outputDefinitionUnfolding(out, u->asClause());
     break;
   case InferenceRule::RESOLUTION:
     outputResolution(out, u->asClause());
