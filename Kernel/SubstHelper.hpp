@@ -23,6 +23,8 @@
 #include "Term.hpp"
 #include "TermIterators.hpp"
 
+#include <unordered_map>
+
 namespace Kernel {
 
 using namespace Lib;
