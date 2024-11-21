@@ -27,6 +27,7 @@
 #include "Inferences/EqualityResolution.hpp"
 #include "Inferences/Factoring.hpp"
 #include "Inferences/Superposition.hpp"
+#include "Shell/EqResWithDeletion.hpp"
 #include "Shell/FunctionDefinition.hpp"
 
 #include "SATSubsumption/SATSubsumptionAndResolution.hpp"
@@ -1153,6 +1154,75 @@ static void outputEqualityResolution(std::ostream &out, Clause *derived) {
   }
 }
 
+static void outputEqualityResolutionWithDeletion(std::ostream &out, Clause *derived) {
+  outputDeductionPrefix(out, derived);
+
+  auto [parent] = getParents<1>(derived);
+  const auto &er = env.proofExtra.get<Inferences::EqResWithDeletionExtra>(derived);
+
+  // compute unifier for selected literal
+  SimpleSubstitution subst;
+  for(Literal *l : er.resolved) {
+    ASS(l->isNegative())
+    ASS(l->isEquality())
+
+    TermList s = l->termArg(0), t = l->termArg(1);
+    ASS(s.isVar() || t.isVar())
+    bool lhs = s.isVar() && !t.containsSubterm(s);
+    if(!lhs)
+      std::swap(s, t);
+    ASS(s.isVar() && !t.containsSubterm(s))
+    ALWAYS(subst.bind(s.var(), t))
+  }
+
+  // canonicalise order of literals in all clauses
+  auto derivedLits = canonicalise(derived);
+  auto litsParent = canonicalise(parent);
+
+  // variables in numerical order
+  auto derivedVars = variables(derived);
+  auto parentVars = variables(parent);
+
+  // for variables in the substitution that do not appear in the output
+  // consider e.g. p(X) and ~p(Y): X -> Y, but output is $false and has no variables
+  auto care = [&](unsigned var) -> bool { return derivedVars.count(var); };
+
+  // bind variables present in the derived clause
+  for(unsigned v : derivedVars)
+    out << " " << v << " : El iota => ";
+  // bind literals in the derived clause
+  for(unsigned i = 0; i < derivedLits.size(); i++) {
+    Literal *l = derivedLits[i];
+    out << "" << l << " : (Prf ";
+    outputLiteral(out, l, care);
+    out << " -> Prf false) => ";
+  }
+
+  // construct the proof term: refer to
+  // "A Shallow Embedding of Resolution and Superposition Proofs into the λΠ-Calculus Modulo"
+  // Guillaume Burel
+  out << "deduction" << parent->number();
+
+  for(unsigned v : parentVars) {
+    out << " ";
+    outputTerm(out, subst.apply(v), care);
+  }
+
+  for(Literal *l : litsParent) {
+    out << " ";
+    if(!er.resolved.count(l)) {
+      outputLiteralPtr(out, l, care, DoSubstitution(subst));
+      continue;
+    }
+    out << " (p : Prf (";
+    outputLiteral(out, SubstHelper::apply(l, subst), care);
+    out << ") => p (refl ";
+    outputTerm(out, SubstHelper::apply(l->termArg(0), subst), care);
+    out << "))";
+  }
+}
+
+
 static void outputDuplicateLiteral(std::ostream &out, Clause *derived) {
   outputDeductionPrefix(out, derived);
   auto [parent] = getParents<1>(derived);
@@ -1324,6 +1394,9 @@ void outputDeduction(std::ostream &out, Unit *u) {
     break;
   case InferenceRule::EQUALITY_RESOLUTION:
     outputEqualityResolution(out, u->asClause());
+    break;
+  case InferenceRule::EQUALITY_RESOLUTION_WITH_DELETION:
+    outputEqualityResolutionWithDeletion(out, u->asClause());
     break;
   case InferenceRule::SUPERPOSITION:
     outputSuperposition(out, u->asClause());
