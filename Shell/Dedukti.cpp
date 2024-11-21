@@ -67,8 +67,6 @@ def refl : x : (El iota) -> Prf (eq x x).
 [x] refl x --> p : ((El iota) -> Prop) => t : Prf (p x) => t.
 def comm : x : (El iota) -> y : (El iota) -> Prf (eq x y) -> Prf (eq y x).
 [x, y] comm x y --> e : (Prf (eq x y)) => p : ((El iota) -> Prop) => e (z : (El iota) => imp (p z) (p x)) (t : (Prf (p x)) => t).
-def comm_not : x : (El iota) -> y : (El iota) -> Prf (not (eq x y)) -> Prf (not (eq y x)).
-[x, y] comm_not x y --> e : (Prf (not (eq x y))) => t : Prf (eq y x) => e (comm y x t).
 def comml : x : (El iota) -> y : (El iota) -> (Prf (eq x y) -> Prf false) -> (Prf (eq y x) -> Prf false).
 [x, y] comml x y --> l : (Prf (eq x y) -> Prf false) => e : Prf (eq y x) => l (comm y x e).
 def comml_not : x : (El iota) -> y : (El iota) -> (Prf (not (eq x y)) -> Prf false) -> (Prf (not (eq y x)) -> Prf false).
@@ -977,28 +975,25 @@ restart:
         out << " => ";
 
         std::stringstream deferred;
-        // decide if comm or comm_not is needed
+
+        DoReplacement transform(lhsSubst, rhsSubst);
+        Literal *lAfter = transform(l);
+
+        // decide if needs commutation
         bool needs_comm = false;
-        Literal *l2 = EqHelper::replace(l, lhsSubst, rhsSubst);
-        if (l2->isEquality()){
-          Literal *lz = EqHelper::replace(l, lhsSubst, TermList(0, true));
-          // out << " " << std::endl;
-          // outputLiteral(out, l2, care);
-          // out << " " << std::endl;
-          // outputLiteral(out, lz, care);
-          // out << " " << std::endl;
-          if (l2->termArg(1) != lz->termArg(1) && l2->termArg(0) != lz->termArg(0)) {
-            needs_comm = true;
-            if (l2->polarity()){
-              deferred << " (comm ";
-            } else {
-              deferred << " (comm_not ";
-            }
-            outputTerm(deferred, l2->termArg(1), care);
+        if(l->isEquality()) {
+          TermList leftAfter = transform(l->termArg(0));
+          TermList rightAfter = transform(l->termArg(1));
+          needs_comm = lAfter->termArg(0) != leftAfter || lAfter->termArg(1) != rightAfter;
+
+          if (needs_comm) {
+            deferred << "(comm" << (lAfter->polarity() ? "" : "l") << " ";
+            outputTerm(deferred, leftAfter, care);
             deferred << " ";
-            outputTerm(deferred, l2->termArg(0), care);
-            }
+            outputTerm(deferred, rightAfter, care);
           }
+        }
+
         deferred << " (";
         if(eq->termArg(0) == lhs)
           deferred << "e_" << eq;
@@ -1023,11 +1018,9 @@ restart:
         if (needs_comm){
           deferred << ")";
         }
-        l = EqHelper::replace(l, lhsSubst, rhsSubst);
+        l = lAfter;
 
         after.push_back(deferred.str());
-
-        
         goto restart;
       }
     }
