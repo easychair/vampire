@@ -229,7 +229,7 @@ public:
   virtual void retractAllAssumptions() override;
   virtual bool hasAssumptions() const override { return !_assumptions.isEmpty(); }
 
-  virtual Status solveUnderAssumptions(const SATLiteralStack& assumps, unsigned conflictCountLimit, bool onlyProperSubusets) override;
+  virtual Status solveUnderAssumptions(const SATLiteralStack& assumps, unsigned conflictCountLimit) override;
 
   /**
    * The set of inserted clauses may not be propositionally UNSAT
