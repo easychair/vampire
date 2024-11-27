@@ -14,15 +14,17 @@
 
 #include <unordered_set>
 
-#include "Kernel/SubstHelper.hpp"
-#include "SATSubsumption/SATSubsumptionAndResolution.hpp"
+#include "Inferences/Superposition.hpp"
 #include "SMTCheck.hpp"
 
 #include "Inferences/BinaryResolution.hpp"
+#include "Kernel/EqHelper.hpp"
 #include "Kernel/RobSubstitution.hpp"
 #include "Kernel/SortHelper.hpp"
+#include "Kernel/SubstHelper.hpp"
 #include "Lib/SharedSet.hpp"
 #include "Saturation/Splitter.hpp"
+#include "SATSubsumption/SATSubsumptionAndResolution.hpp"
 
 using namespace Kernel;
 using Indexing::Splitter;
@@ -224,6 +226,16 @@ static void outputSplits(std::ostream &out, Unit *u) {
     out << "(declare-const sp" << Splitter::getLiteralFromName(split).var() << " Bool)\n";
 }
 
+static void outputTrivial(std::ostream &out, DHMap<unsigned, TermList> &conclSorts, Clause *concl) {
+  UnitIterator parents = concl->getParents();
+  while(parents.hasNext()) {
+    Unit *parent = parents.next();
+    ASS(parent->isClause())
+    outputPremise(out, conclSorts, parent->asClause());
+  }
+  outputConclusion(out, conclSorts, concl->asClause());
+}
+
 static void outputResolution(std::ostream &out, DHMap<unsigned, TermList> &conclSorts, Clause *concl) {
   auto [left, right] = getParents<2>(concl);
   const auto &br = env.proofExtra.get<Inferences::BinaryResolutionExtra>(concl);
@@ -261,6 +273,37 @@ static void outputSubsumptionResolution(std::ostream &out, DHMap<unsigned, TermL
   outputConclusion(out, conclSorts, concl->asClause());
 }
 
+static void outputSuperposition(std::ostream &out, DHMap<unsigned, TermList> &conclSorts, Clause *concl) {
+  auto [left, right] = getParents<2>(concl);
+  auto sup = env.proofExtra.get<Inferences::SuperpositionExtra>(concl);
+
+  // compute unifier for selected literals
+  RobSubstitution subst;
+  Literal *leftSelected = sup.selected.selectedLiteral.selectedLiteral;
+  Literal *rightSelected = sup.selected.otherLiteral;
+  TermList from = sup.rewrite.lhs;
+  TermList to = EqHelper::getOtherEqualitySide(rightSelected, from);
+  TermList target = sup.rewrite.rewritten;
+  ASS(rightSelected->isEquality())
+  ASS(rightSelected->isPositive())
+  ASS(rightSelected->termArg(0) == from || rightSelected->termArg(1) == from)
+  ALWAYS(subst.unify(target, 0, from, 1))
+
+  subst.apply(to, 1);
+  subst.apply(leftSelected, 0);
+  subst.apply(target, 0);
+  subst.apply(from, 1);
+  for(unsigned i = 0; i < left->length(); i++)
+    if((*left)[i] != leftSelected)
+      subst.apply((*left)[i], 0);
+  for(unsigned i = 0; i < right->length(); i++)
+    if((*right)[i] != rightSelected)
+      subst.apply((*right)[i], 1);
+
+  outputPremise(out, conclSorts, left->asClause(), DoRobSubst<0>(subst));
+  outputPremise(out, conclSorts, right->asClause(), DoRobSubst<1>(subst));
+  outputConclusion(out, conclSorts, concl->asClause());
+}
 
 namespace Shell {
 namespace SMTCheck {
@@ -296,11 +339,17 @@ void outputStep(std::ostream &out, Unit *u) {
   auto conclSorts = outputSkolems(out, u);
   outputSplits(out, u);
   switch(rule) {
+  case InferenceRule::REMOVE_DUPLICATE_LITERALS:
+    outputTrivial(out, conclSorts, u->asClause());
+    break;
   case InferenceRule::RESOLUTION:
     outputResolution(out, conclSorts, u->asClause());
     break;
   case InferenceRule::SUBSUMPTION_RESOLUTION:
     outputSubsumptionResolution(out, conclSorts, u->asClause());
+    break;
+  case InferenceRule::SUPERPOSITION:
+    outputSuperposition(out, conclSorts, u->asClause());
     break;
   default:
     sorry = true;
