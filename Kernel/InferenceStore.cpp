@@ -27,6 +27,7 @@
 #include "Shell/Statistics.hpp"
 #include "Shell/UIHelper.hpp"
 #include "Shell/Dedukti.hpp"
+#include "Shell/SMTCheck.hpp"
 
 #include "Parse/TPTP.hpp"
 
@@ -848,6 +849,28 @@ struct InferenceStore::DeduktiProofPrinter
   }
 };
 
+struct InferenceStore::SMTCheckPrinter
+: public InferenceStore::ProofPrinter
+{
+  SMTCheckPrinter(ostream& out, InferenceStore* is)
+  : ProofPrinter(out, is) {}
+
+  void print()
+  {
+    out << "(declare-sort I 0)\n";
+    out << "(declare-const inhabit I)\n";
+    UIHelper::outputSymbolDeclarations(out);
+    ProofPrinter::print();
+  }
+
+  void printStep(Unit* u)
+  {
+    SMTCheck::outputStep(out, u);
+  }
+};
+
+
+
 InferenceStore::ProofPrinter* InferenceStore::createProofPrinter(ostream& out)
 {
   switch(env.options->proof()) {
@@ -863,9 +886,10 @@ InferenceStore::ProofPrinter* InferenceStore::createProofPrinter(ostream& out)
     return 0;
   case Options::Proof::DEDUKTI:
     return new DeduktiProofPrinter(out, this);
+  case Shell::Options::Proof::SMTCHECK:
+    return new SMTCheckPrinter(out, this);
   }
   ASSERTION_VIOLATION;
-  return 0;
 }
 
 /**

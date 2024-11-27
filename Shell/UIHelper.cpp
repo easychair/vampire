@@ -42,6 +42,7 @@
 #include "LispLexer.hpp"
 #include "LispParser.hpp"
 #include "Options.hpp"
+#include "SMTCheck.hpp"
 #include "Statistics.hpp"
 #include "TPTPPrinter.hpp"
 #include "UIHelper.hpp"
@@ -692,7 +693,7 @@ void UIHelper::outputSymbolTypeDeclarationIfNeeded(ostream& out, bool function, 
   OperatorType* type = function ? sym->fnType() :
                (typeCon ? sym->typeConType() : sym->predType());
 
-  if (type->isAllDefault() && env.options->proof() != Options::Proof::DEDUKTI) {//TODO required
+  if (type->isAllDefault() && (env.options->proof() != Options::Proof::DEDUKTI && env.options->proof() != Options::Proof::SMTCHECK)) {//TODO required
     return;
   }
 
@@ -709,6 +710,10 @@ void UIHelper::outputSymbolTypeDeclarationIfNeeded(ostream& out, bool function, 
   if(!(function && env.signature->isAppFun(symNumber))){
     if(env.options->proof() == Options::Proof::DEDUKTI) {
       Dedukti::outputTypeDecl(std::cout, symName.c_str(), type);
+      return;
+    }
+    else if(env.options->proof() == Options::Proof::SMTCHECK) {
+      SMTCheck::outputTypeDecl(std::cout, symName.c_str(), type);
       return;
     }
 

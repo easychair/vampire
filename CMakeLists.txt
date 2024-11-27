@@ -565,6 +565,7 @@ set(VAMPIRE_SHELL_SOURCES
     Shell/SimplifyFalseTrue.cpp
     Shell/SineUtils.cpp
     Shell/FOOLElimination.cpp
+    Shell/SMTCheck.cpp
     Shell/Statistics.cpp
     Debug/TimeProfiling.hpp
     Debug/TimeProfiling.cpp
@@ -617,6 +618,7 @@ set(VAMPIRE_SHELL_SOURCES
     Shell/SineUtils.hpp
     Shell/SMTLIBLogic.hpp
     Shell/FOOLElimination.hpp
+    Shell/SMTCheck.hpp
     Shell/Statistics.hpp
     Shell/SymbolDefinitionInlining.hpp
     Shell/SymbolOccurrenceReplacement.hpp

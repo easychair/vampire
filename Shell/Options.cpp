@@ -299,7 +299,7 @@ void Options::init()
     _problemName.description="";
     //_lookup.insert(&_problemName);
 
-    _proof = ChoiceOptionValue<Proof>("proof","p",Proof::ON,{"off","on","proofcheck","tptp","property","dedukti"});
+    _proof = ChoiceOptionValue<Proof>("proof","p",Proof::ON,{"off","on","proofcheck","tptp","property","dedukti","smtcheck"});
     _proof.description=
       "Specifies whether proof (or similar e.g. model/saturation) will be output and in which format:\n"
       "- off gives no proof output\n"
@@ -308,10 +308,11 @@ void Options::init()
       "- tptp gives TPTP output\n"
       "- property is a developmental option. It allows developers to output statistics about the proof using a ProofPrinter "
       "object (see Kernel/InferenceStore::ProofPropertyPrinter\n"
-      "- dedukti produces a proof in Dedukti format\n";
+      "- dedukti produces a proof in Dedukti format\n"
+      "- smtcheck produces a ground SMT script for proof checking\n";
     _lookup.insert(&_proof);
     _proof.tag(OptionTag::OUTPUT);
-    _proof.addHardConstraint(If(equal(Proof::DEDUKTI)).then(_proofExtra.is(equal(ProofExtra::FULL))));
+    _proof.addHardConstraint(If(Or(equal(Proof::DEDUKTI),equal(Proof::SMTCHECK))).then(_proofExtra.is(equal(ProofExtra::FULL))));
     //_proof.addHardConstraint(If(equal(Proof::DEDUKTI)).then(_splitting.is(equal(false))));
 
     _minimizeSatProofs = BoolOptionValue("minimize_sat_proofs","msp",true);
