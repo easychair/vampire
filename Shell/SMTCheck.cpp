@@ -14,13 +14,18 @@
 
 #include <unordered_set>
 
-#include "Inferences/BinaryResolution.hpp"
+#include "Kernel/SubstHelper.hpp"
+#include "SATSubsumption/SATSubsumptionAndResolution.hpp"
 #include "SMTCheck.hpp"
 
+#include "Inferences/BinaryResolution.hpp"
 #include "Kernel/RobSubstitution.hpp"
 #include "Kernel/SortHelper.hpp"
+#include "Lib/SharedSet.hpp"
+#include "Saturation/Splitter.hpp"
 
 using namespace Kernel;
+using Indexing::Splitter;
 
 // get N parents of a unit
 // TODO merge with Dedukti version
@@ -115,21 +120,66 @@ static void outputLiteral(std::ostream &out, DHMap<unsigned, TermList> &conclSor
     out << ")";
 }
 
-static void outputPremise(std::ostream &out, DHMap<unsigned, TermList> &conclSorts, Clause *cl, const RobSubstitution &subst, int bank) {
+static void outputSplit(std::ostream &out, unsigned split, bool flip = false) {
+  SATLiteral sat = Splitter::getLiteralFromName(split);
+  out
+    << (flip != sat.polarity() ? "" : "(not ")
+    << "sp" << sat.var()
+    << (flip != sat.polarity() ? "" : ")");
+}
+
+struct Identity {
+  Literal *operator()(Literal *l) { return l; }
+};
+
+struct DoSimpleSubst {
+  SimpleSubstitution &subst;
+  DoSimpleSubst(SimpleSubstitution &subst) : subst(subst) {}
+  Literal *operator()(Literal *l) { return SubstHelper::apply(l, subst); }
+};
+
+template<unsigned bank>
+struct DoRobSubst {
+  const RobSubstitution &subst;
+  DoRobSubst(const RobSubstitution &subst) : subst(subst) {}
+  Literal *operator()(Literal *l) { return subst.apply(l, bank); }
+};
+
+template<typename Transform>
+static void outputPremise(std::ostream &out, DHMap<unsigned, TermList> &conclSorts, Clause *cl, Transform transform) {
   out << "(assert (or";
   for(Literal *l : cl->iterLits()) {
     out << " ";
-    outputLiteral(out, conclSorts, subst.apply(l, bank));
+    outputLiteral(out, conclSorts, transform(l));
+  }
+  if(cl->splits()) {
+    SplitSet &clSplits = *cl->splits();
+    for(unsigned i = 0; i < clSplits.size(); i++) {
+      out << " ";
+      outputSplit(out, clSplits[i]);
+    }
   }
   out << "))\n";
 }
 
+static void outputPremise(std::ostream &out, DHMap<unsigned, TermList> &conclSorts, Clause *cl) {
+  outputPremise(out, conclSorts, cl, Identity());
+}
 
 static void outputConclusion(std::ostream &out, DHMap<unsigned, TermList> &conclSorts, Clause *cl) {
   for(Literal *l : cl->iterLits()) {
     out << "(assert ";
     outputLiteral(out, conclSorts, Literal::complementaryLiteral(l));
     out << ")\n";
+  }
+
+  if(cl->splits()) {
+    SplitSet &clSplits = *cl->splits();
+    for(unsigned i = 0; i < clSplits.size(); i++) {
+      out << "(assert ";
+      outputSplit(out, clSplits[i], true);
+      out << ")\n";
+    }
   }
 }
 
@@ -145,13 +195,39 @@ static DHMap<unsigned, TermList> outputSkolems(std::ostream &out, Unit *u) {
   return sorts;
 }
 
+static void outputSplits(std::ostream &out, Unit *u) {
+  if(!u->isClause())
+    return;
+  Clause *cl = u->asClause();
+  if(!cl->splits())
+    return;
+  SplitSet &clSplits = *cl->splits();
 
-static void outputResolution(std::ostream &out, Clause *concl) {
-  auto conclSorts = outputSkolems(out, concl);
+  std::unordered_set<unsigned> splits;
+  for(unsigned i = 0; i < clSplits.size(); i++)
+    splits.insert(clSplits[i]);
+
+  UnitIterator parents = u->getParents();
+  while(parents.hasNext()) {
+    Unit *parent = parents.next();
+    if(!parent->isClause())
+      continue;
+    Clause *cl = u->asClause();
+    if(!cl->splits())
+      continue;
+    SplitSet &clSplits = *cl->splits();
+    for(unsigned i = 0; i < clSplits.size(); i++)
+      splits.insert(clSplits[i]);
+  }
+
+  for(unsigned split : splits)
+    out << "(declare-const sp" << Splitter::getLiteralFromName(split).var() << " Bool)\n";
+}
+
+static void outputResolution(std::ostream &out, DHMap<unsigned, TermList> &conclSorts, Clause *concl) {
   auto [left, right] = getParents<2>(concl);
   const auto &br = env.proofExtra.get<Inferences::BinaryResolutionExtra>(concl);
 
-  // compute unifier for selected literals
   RobSubstitution subst;
   Literal *selectedLeft = br.selectedLiteral.selectedLiteral;
   Literal *selectedRight = br.otherLiteral;
@@ -165,10 +241,26 @@ static void outputResolution(std::ostream &out, Clause *concl) {
     if((*right)[i] != selectedRight)
       subst.apply((*right)[i], 1);
 
-  outputPremise(out, conclSorts, left->asClause(), subst, 0);
-  outputPremise(out, conclSorts, right->asClause(), subst, 1);
+  outputPremise(out, conclSorts, left->asClause(), DoRobSubst<0>(subst));
+  outputPremise(out, conclSorts, right->asClause(), DoRobSubst<1>(subst));
   outputConclusion(out, conclSorts, concl->asClause());
 }
+
+static void outputSubsumptionResolution(std::ostream &out, DHMap<unsigned, TermList> &conclSorts, Clause *concl) {
+  auto [left, right] = getParents<2>(concl);
+  auto sr = env.proofExtra.get<Inferences::LiteralInferenceExtra>(concl);
+  Literal *m = sr.selectedLiteral;
+
+  // reconstruct match by calling into the SATSR code
+  SATSubsumption::SATSubsumptionAndResolution satSR;
+  ALWAYS(satSR.checkSubsumptionResolutionWithLiteral(right, left, left->getLiteralPosition(m)))
+  auto subst = satSR.getBindingsForSubsumptionResolutionWithLiteral();
+
+  outputPremise(out, conclSorts, left->asClause());
+  outputPremise(out, conclSorts, right->asClause(), DoSimpleSubst(subst));
+  outputConclusion(out, conclSorts, concl->asClause());
+}
+
 
 namespace Shell {
 namespace SMTCheck {
@@ -199,16 +291,25 @@ void outputStep(std::ostream &out, Unit *u) {
 
   out << "\n; step " << u->number() << "\n";
   out << "(push)\n";
+
+  bool sorry = false;
+  auto conclSorts = outputSkolems(out, u);
+  outputSplits(out, u);
   switch(rule) {
   case InferenceRule::RESOLUTION:
-    outputResolution(out, u->asClause());
+    outputResolution(out, conclSorts, u->asClause());
+    break;
+  case InferenceRule::SUBSUMPTION_RESOLUTION:
+    outputSubsumptionResolution(out, conclSorts, u->asClause());
     break;
   default:
+    sorry = true;
     out << "(echo \"sorry: " << ruleName(rule) << "\")\n";
-    out << "(assert false)\n";
   }
-  out << "(set-info :status unsat)\n";
-  out << "(check-sat)\n";
+  if(!sorry) {
+    out << "(set-info :status unsat)\n";
+    out << "(check-sat)\n";
+  }
   out << "(pop)\n";
 }
 
