@@ -21,7 +21,11 @@
 #include "Kernel/RobSubstitution.hpp"
 #include "Kernel/SubstHelper.hpp"
 #include "Kernel/TermIterators.hpp"
+#include "Lib/SharedSet.hpp"
 #include "Parse/TPTP.hpp"
+#include "SATSubsumption/SATSubsumptionAndResolution.hpp"
+#include "Saturation/SaturationAlgorithm.hpp"
+#include "Saturation/Splitter.hpp"
 
 #include "Inferences/BinaryResolution.hpp"
 #include "Inferences/EqualityResolution.hpp"
@@ -30,9 +34,8 @@
 #include "Shell/EqResWithDeletion.hpp"
 #include "Shell/FunctionDefinition.hpp"
 
-#include "SATSubsumption/SATSubsumptionAndResolution.hpp"
-
 #include <array>
+#include <unordered_map>
 #include <set>
 #include <sstream>
 
@@ -51,7 +54,7 @@ not : (Prop -> Prop).
 and : (Prop -> (Prop -> Prop)).
 [p, q] Prf (and p q) --> (r : Prop -> (((Prf p) -> ((Prf q) -> (Prf r))) -> (Prf r))).
 or : (Prop -> (Prop -> Prop)).
-[p, q] Prf (or p q) --> (r : Prop -> (((Prf p) -> (Prf r)) -> (((Prf q) -> (Prf r)) -> (Prf r)))).
+[p, q] Prf (or p q) --> (((Prf p) -> (Prf false)) -> (((Prf q) -> (Prf false)) -> (Prf false))).
 imp : (Prop -> (Prop -> Prop)).
 [p, q] Prf (imp p q) --> ((Prf p) -> (Prf q)).
 
@@ -101,6 +104,14 @@ def Prf_prop_clause : (prop_clause -> Type).
 def Prf_clause : (clause -> Type).
 [c] Prf_clause (cl c) --> (Prf_prop_clause c).
 [A, f] Prf_clause (bind A f) --> (x : (El A) -> (Prf_clause (f x))).
+
+def av_clause : Type.
+def acl : clause -> av_clause.
+def if : Prop -> av_clause -> av_clause.
+def Prf_av_clause : av_clause -> Type.
+
+[c] Prf_av_clause (acl c) --> Prf_clause c.
+[sp, c] Prf_av_clause (if sp c) --> (Prf (not sp) -> Prf false) -> Prf_av_clause c.
 
 (;----------------------------------------------------------------------------;)
 
@@ -356,32 +367,51 @@ static void outputLiteralPtr(
     out << ")";
 }
 
-static void outputClause(std::ostream &out, Clause *clause) {
-  if(clause->isEmpty()) {
-    out << "Prf_clause (cl ec)";
-    return;
-  }
+static void outputSplit(std::ostream &out, unsigned splitName, bool flip = false) {
+  SATLiteral split = Splitter::getLiteralFromName(splitName);
+  if(split.polarity() == flip)
+    out << "(not ";
+  out << "sp" << split.var();
+  if(split.polarity() == flip)
+    out << ")";
+}
 
-  out << "Prf_clause ";
+static void outputClause(std::ostream &out, Clause *clause) {
+  unsigned close_parens = 0;
+  if(clause->noSplits())
+    out << "Prf_clause";
+  else {
+    out << "Prf_av_clause";
+    SplitSet &splits = *clause->splits();
+    for(unsigned i = 0; i < splits.size(); i++) {
+      out << " (if";
+      SATLiteral split = Splitter::getLiteralFromName(splits[i]);
+      if(!split.polarity())
+        out << " (not";
+      out << " sp" << split.var();
+      if(!split.polarity())
+        out << ")";
+    }
+    out << " (acl";
+    close_parens = splits.size() + 1;
+  }
   auto vars = variables(clause);
   for(unsigned var : vars)
-    out << "(bind iota (" << var << " : El iota => ";
+    out << " (bind iota (" << var << " : El iota =>";
+  close_parens += 2 * vars.size();
 
-  out << "(cl ";
+  out << " (cl";
+  close_parens++;
   auto canonical = canonicalise(clause);
   for(Literal *literal : canonical) {
-    out << "(cons ";
+    out << " (cons ";
     outputLiteral(out, literal, AlwaysCare {});
-    out << " ";
   }
-  out << "ec";
+  close_parens += canonical.size();
+  out << " ec";
 
-  for(unsigned i = 0; i < clause->length(); i++)
+  for(unsigned i = 0; i < close_parens; i++)
     out << ")";
-  for(unsigned i = 0; i < vars.size(); i++)
-    out << "))";
-
-  out << ")";
 }
 
 static void outputAxiomName(std::ostream &out, Unit *axiom) {
@@ -401,6 +431,31 @@ static void outputDeductionPrefix(std::ostream &out, Unit *deduction) {
   Clause *clause = static_cast<Clause *>(deduction);
   outputClause(out, clause);
   out << " := ";
+
+  if(clause->noSplits())
+    return;
+
+  SplitSet &splits = *clause->splits();
+  for(unsigned i = 0; i < splits.size(); i++) {
+    SATLiteral split = Splitter::getLiteralFromName(splits[i]);
+    out << " nnsp" << split.var();
+    out << " : (Prf";
+    if(!split.polarity())
+      out << " (not";
+    out <<  " (not sp" << split.var();
+    if(!split.polarity())
+      out << ")";
+    out << ") -> Prf false) =>";
+  }
+}
+
+static void outputParentWithSplits(std::ostream &out, Clause *parent) {
+  out << "deduction" << parent->number();
+  if(parent->noSplits())
+    return;
+  SplitSet &splits = *parent->splits();
+  for(unsigned i = 0; i < splits.size(); i++)
+    out << " nnsp" << Splitter::getLiteralFromName(splits[i]).var();
 }
 
 static void sorry(std::ostream &out, Unit *admit) {
@@ -431,30 +486,30 @@ static void sorry(std::ostream &out, Unit *admit) {
 }
 
 // get N parents of a unit
-template<unsigned N, typename T>
-std::array<T *, N> getParents(T *unit) {
-  std::array<T *, N> parents;
+template<unsigned N>
+std::array<Clause *, N> getParents(Unit *unit) {
+  std::array<Clause *, N> parents;
   UnitIterator it = unit->getParents();
   for(unsigned i = 0; i < N; i++) {
     ALWAYS(it.hasNext())
-    parents[i] = static_cast<T *>(it.next());
+    parents[i] = static_cast<Clause *>(it.next());
   }
   ALWAYS(!it.hasNext())
   return parents;
 }
 
 // get N parents of a unit
-template<unsigned N, typename T>
-std::pair<std::array<T *, N>, std::vector<T *>> getParentsVariadic(T *unit) {
-  std::array<T *, N> parents;
+template<unsigned N>
+std::pair<std::array<Clause *, N>, std::vector<Clause *>> getParentsVariadic(Unit *unit) {
+  std::array<Clause *, N> parents;
   UnitIterator it = unit->getParents();
   for(unsigned i = 0; i < N; i++) {
     ALWAYS(it.hasNext())
-    parents[i] = static_cast<T *>(it.next());
+    parents[i] = static_cast<Clause *>(it.next());
   }
-  std::vector<T *> rest;
+  std::vector<Clause *> rest;
   while(it.hasNext())
-    rest.push_back(static_cast<T *>(it.next()));
+    rest.push_back(static_cast<Clause *>(it.next()));
   return {parents, rest};
 }
 
@@ -512,7 +567,7 @@ static void outputResolution(std::ostream &out, Clause *derived) {
   // construct the proof term: refer to
   // "A Shallow Embedding of Resolution and Superposition Proofs into the λΠ-Calculus Modulo"
   // Guillaume Burel
-  out << "deduction" << left->number();
+  outputParentWithSplits(out, left);
 
   for(unsigned v : leftVars) {
     out << " ";
@@ -530,7 +585,8 @@ static void outputResolution(std::ostream &out, Clause *derived) {
 
   out << " (" << tp << ": (Prf ";
   outputLiteral(out, leftSelectedSubst, care);
-  out << ") => " << "deduction" << right->number();
+  out << ") => ";
+  outputParentWithSplits(out, right);
   for(unsigned v : rightVars) {
     out << " ";
     outputTerm(out, subst.apply(TermList(v, false), 1), care);
@@ -598,7 +654,7 @@ static void outputSubsumptionResolution(std::ostream &out, Clause *derived) {
   //
   // TODO this should be more or less the 'resolution' term, but with multiple tnp/tp lambdas factored out
   // Anja is a smart cookie
-  out << "deduction" << left->number();
+  outputParentWithSplits(out, left);
 
   for(unsigned v : leftVars) {
     out << " ";
@@ -616,7 +672,8 @@ static void outputSubsumptionResolution(std::ostream &out, Clause *derived) {
 
       out << "(tp: (Prf ";
       outputLiteral(out, m, care);
-      out << ") => " << "deduction" << right->number();
+      out << ") => ";
+      outputParentWithSplits(out, right);
       for(unsigned v : rightVars) {
         out << " ";
         outputTerm(out, SubstHelper::apply(TermList(v, false), subst), care);
@@ -647,7 +704,8 @@ static void outputSubsumptionResolution(std::ostream &out, Clause *derived) {
 
       out << "(tnp: (Prf ";
       outputLiteral(out, m, care);
-      out << ") => " << "deduction" << right->number();
+      out << ") => ";
+      outputParentWithSplits(out, right);
       for(unsigned v : rightVars) {
         out << " ";
         outputTerm(out, SubstHelper::apply(TermList(v, false), subst), care);
@@ -733,7 +791,7 @@ static void outputSuperposition(std::ostream &out, Clause *derived) {
   // construct the proof term: refer to
   // "A Shallow Embedding of Resolution and Superposition Proofs into the λΠ-Calculus Modulo"
   // Guillaume Burel
-  out << " deduction" << left->number();
+  outputParentWithSplits(out, left);
 
   for(unsigned v : leftVars) {
     out << " ";
@@ -754,7 +812,8 @@ static void outputSuperposition(std::ostream &out, Clause *derived) {
 
     out << " (q : (Prf (";
     outputLiteral(out, litLeft, care, DoRobSubstitution0(subst));
-    out << ")) => deduction" << right->number();
+    out << ")) => ";
+    outputParentWithSplits(out, right);
 
     for(unsigned v : rightVars) {
       out << " ";
@@ -859,7 +918,7 @@ static void outputDemodulation(std::ostream &out, Clause *derived) {
   // construct the proof term: refer to
   // "A Shallow Embedding of Resolution and Superposition Proofs into the λΠ-Calculus Modulo"
   // Guillaume Burel
-  out << " deduction" << left->number();
+  outputParentWithSplits(out, left);
 
   for(unsigned v : leftVars) {
     out << " ";
@@ -880,7 +939,8 @@ static void outputDemodulation(std::ostream &out, Clause *derived) {
 
     out << " (q : (Prf (";
     outputLiteral(out, litLeft, care);
-    out << ")) => deduction" << right->number();
+    out << ")) => ";
+    outputParentWithSplits(out, right);
 
     for(unsigned v : rightVars) {
       out << " ";
@@ -1063,7 +1123,7 @@ static void outputTrivialInequalityRemoval(std::ostream &out, Clause *derived) {
   // construct the proof term: refer to
   // "A Shallow Embedding of Resolution and Superposition Proofs into the λΠ-Calculus Modulo"
   // Guillaume Burel
-  out << "deduction" << parent->number();
+  outputParentWithSplits(out, parent);
 
   for(unsigned v : parentVars) {
     out << " ";
@@ -1130,7 +1190,7 @@ static void outputEqualityResolution(std::ostream &out, Clause *derived) {
   // construct the proof term: refer to
   // "A Shallow Embedding of Resolution and Superposition Proofs into the λΠ-Calculus Modulo"
   // Guillaume Burel
-  out << "deduction" << parent->number();
+  outputParentWithSplits(out, parent);
 
   for(unsigned v : parentVars) {
     out << " ";
@@ -1247,7 +1307,7 @@ static void outputDuplicateLiteral(std::ostream &out, Clause *derived) {
   // construct the proof term: refer to
   // "A Shallow Embedding of Resolution and Superposition Proofs into the λΠ-Calculus Modulo"
   // Guillaume Burel
-  out << "deduction" << parent->number();
+  outputParentWithSplits(out, parent);
 
   for(unsigned v : vars) {
     out << " ";
@@ -1303,7 +1363,7 @@ static void outputFactoring(std::ostream &out, Clause *derived) {
   // construct the proof term: refer to
   // "A Shallow Embedding of Resolution and Superposition Proofs into the λΠ-Calculus Modulo"
   // Guillaume Burel
-  out << "deduction" << parent->number();
+  outputParentWithSplits(out, parent);
 
   for(unsigned v : parentVars) {
     out << " ";
@@ -1313,6 +1373,125 @@ static void outputFactoring(std::ostream &out, Clause *derived) {
     out << " ";
     outputLiteralPtr(out, l, care, DoRobSubstitution0(subst));
   }
+}
+
+static void outputAVATARDefinition(std::ostream &out, Unit *def) {
+  Clause *component = env.proofExtra.get<SplitDefinitionExtra>(def).component;
+  unsigned componentName = component->splits()->sval();
+  SATLiteral split = Splitter::getLiteralFromName(componentName);
+  out << "def sp" << split.var() << " : Prop :=";
+
+  auto vars = variables(component);
+  for(unsigned var : vars)
+    out << " forall iota (" << var << " : El iota =>";
+  auto literals = canonicalise(component);
+  for(Literal *literal : literals) {
+    out << " (imp (not ";
+    outputLiteral(out, literal, AlwaysCare {});
+    out << ")";
+  }
+  out << " false";
+  for(unsigned i = 0; i < literals.size() + vars.size(); i++)
+    out << ")";
+}
+
+static void outputAVATARComponent(std::ostream &out, Clause *component) {
+  ASS(component->splits())
+  ASS_EQ(component->splits()->size(), 1)
+  outputDeductionPrefix(out, component);
+
+  unsigned componentName = component->splits()->sval();
+  SATLiteral split = Splitter::getLiteralFromName(componentName);
+  auto literals = canonicalise(component);
+  // variables in numerical order
+  auto componentVars = variables(component);
+  // bind variables present in the derived clause
+  for(unsigned v : componentVars)
+    out << " " << v << " : El iota => ";
+  // bind literals in the derived clause
+  for(Literal *l : literals) {
+    out << "" << l << " : (Prf ";
+    outputLiteral(out, l, AlwaysCare {});
+    out << " -> Prf false) => ";
+  }
+  out << "nnsp" << split.var() << "(psp : Prf ";
+  outputSplit(out, componentName);
+  out << " => psp";
+
+  for(unsigned v : componentVars)
+    out << " " << v;
+  for(Literal *l : literals)
+    out << " " << l;
+  out << ")";
+}
+
+static void outputAVATARSplitClause(std::ostream &out, Unit *derived) {
+  UnitIterator parents = derived->getParents();
+  ALWAYS(parents.hasNext())
+  Clause *parent = parents.next()->asClause();
+
+  std::vector<Clause *> components;
+  std::vector<SATLiteral> splits;
+  out << "deduction" << derived->number() << " : Prf_clause (cl";
+  while(parents.hasNext()) {
+    Unit *parent = parents.next();
+    auto dex = env.proofExtra.get<SplitDefinitionExtra>(parent);
+    ASS(dex.component->isComponent())
+    out << " (cons ";
+    unsigned component = dex.component->splits()->sval();
+    outputSplit(out, component);
+    components.push_back(dex.component);
+    splits.push_back(Splitter::getLiteralFromName(component));
+  }
+  out << " ec";
+  for(int i = 0; i < components.size(); i++)
+    out << ")";
+  //out << ") :=";
+  out << ")";
+  return;
+
+  for(SATLiteral split : splits)
+    out << " nsp" << split.var() << " : (Prf sp" << split.var() << " -> Prf false) =>";
+
+  unsigned closeParens = 0;
+  auto parentVars = variables(parent);
+  unsigned offset = 0;
+  for(unsigned i = 0; i < splits.size(); i++) {
+    out << " nsp" << splits[i].var();
+
+    // variables in numerical order
+    auto componentVars = variables(components[i]);
+    auto literals = canonicalise(components[i]);
+    // bind variables present in the derived clause
+    for(unsigned v : componentVars)
+      out << " (" << v + offset << " : El iota =>";
+    offset += componentVars.size() + 1;
+    // bind literals in the derived clause
+    for(Literal *l : literals) {
+      out << " (" << l << " : (Prf ";
+      outputLiteral(out, l, AlwaysCare {});
+      out << " -> Prf false) =>";
+    }
+    closeParens += componentVars.size() + literals.size();
+  }
+
+  auto vars = variables(parent);
+  auto literals = canonicalise(parent);
+  out << " deduction" << parent->number();
+  for(unsigned var : vars)
+    out << " " << var;
+  for(Literal *l : literals)
+    out << " " << l;
+
+  for(unsigned i = 0; i < closeParens; i++)
+    out << ")";
+}
+
+static void outputAVATARContradictionClause(std::ostream &out, Unit *contradiction) {
+  auto [parent] = getParents<1>(contradiction);
+  out << "def deduction" << contradiction->number() << " : ";
+  outputClause(out, parent);
+  out << " := deduction" << parent->number();
 }
 
 namespace Shell {
@@ -1405,6 +1584,22 @@ void outputDeduction(std::ostream &out, Unit *u) {
   case InferenceRule::BACKWARD_DEMODULATION:
     outputDemodulation(out, u->asClause());
     break;
+  case InferenceRule::AVATAR_DEFINITION:
+    outputAVATARDefinition(out, u);
+    break;
+  case InferenceRule::AVATAR_COMPONENT:
+    outputAVATARComponent(out, u->asClause());
+    break;
+  case InferenceRule::AVATAR_SPLIT_CLAUSE:
+    outputAVATARSplitClause(out, u);
+    break;
+  case InferenceRule::AVATAR_CONTRADICTION_CLAUSE:
+    outputAVATARContradictionClause(out, u);
+    // TODO just the identity function
+    break;
+  case InferenceRule::AVATAR_REFUTATION:
+    // TODO
+    return;
   default:
     sorry(out, u);
   }
