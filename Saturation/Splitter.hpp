@@ -50,6 +50,14 @@ using namespace Indexing;
 
 typedef Stack<SplitLevel> SplitLevelStack;
 
+struct SplitDefinitionExtra : public InferenceExtra {
+  Clause *component;
+  SplitDefinitionExtra(Clause *component) : component(component) {
+    component->incRefCnt();
+  }
+  void output(std::ostream &out) const override;
+};
+
 class Splitter;
 
 /**

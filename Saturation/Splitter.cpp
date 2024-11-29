@@ -57,6 +57,10 @@ using namespace std;
 using namespace Lib;
 using namespace Kernel;
 
+void SplitDefinitionExtra::output(std::ostream &out) const {
+  out << "XXX";
+}
+
 /////////////////////////////
 // SplittingBranchSelector
 //
@@ -1120,12 +1124,14 @@ bool Splitter::doSplitting(Clause* cl)
   FormulaList* resLst=0;
 
   unsigned compCnt = comps.size();
+  std::vector<Clause *> components;
   for(unsigned i=0; i<compCnt; ++i) {
     const LiteralStack& comp = comps[i];
     Clause* compCl;
     SplitLevel compName = tryGetComponentNameOrAddNew(comp, cl, compCl);
     SATLiteral nameLit = getLiteralFromName(compName);
     satClauseLits.push(nameLit);
+    components.push_back(compCl);
 
     UnitList::push(getDefinitionFromName(compName),ps);
     FormulaList::push(new NamedFormula(getFormulaStringFromName(compName)),resLst);
@@ -1243,6 +1249,9 @@ Clause* Splitter::buildAndInsertComponentClause(SplitLevel name, unsigned size, 
 
   Clause* compCl = Clause::fromIterator(arrayIter(lits, size),
           NonspecificInference1(InferenceRule::AVATAR_COMPONENT,def_u));
+
+  if(posName == name && env.options->proofExtra() == Options::ProofExtra::FULL)
+    env.proofExtra.insert(def_u, new SplitDefinitionExtra(compCl));
 
   // propagate running sums:
   // - we have certain values we propagate from the parents of a clause d to d. These values are mainly used to guide saturation.

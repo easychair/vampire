@@ -305,7 +305,7 @@ void Options::init()
     _lookup.insert(&_proof);
     _proof.tag(OptionTag::OUTPUT);
     _proof.addHardConstraint(If(equal(Proof::DEDUKTI)).then(_proofExtra.is(equal(ProofExtra::FULL))));
-    _proof.addHardConstraint(If(equal(Proof::DEDUKTI)).then(_splitting.is(equal(false))));
+    //_proof.addHardConstraint(If(equal(Proof::DEDUKTI)).then(_splitting.is(equal(false))));
 
     _minimizeSatProofs = BoolOptionValue("minimize_sat_proofs","msp",true);
     _minimizeSatProofs.description="Perform unsat core minimization when a sat solver finds a clause set UNSAT\n"
