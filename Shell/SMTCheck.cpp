@@ -305,6 +305,41 @@ static void outputSuperposition(std::ostream &out, DHMap<unsigned, TermList> &co
   outputConclusion(out, conclSorts, concl->asClause());
 }
 
+static bool isDemodulatorFor(Literal *demodulator, TermList target) {
+  ASS(demodulator->isEquality())
+  ASS(demodulator->isPositive())
+
+  SimpleSubstitution subst;
+  if(!MatchingUtils::matchTerms((*demodulator)[0], target, subst))
+    return false;
+
+  Ordering &ordering = *Ordering::tryGetGlobalOrdering();
+  return ordering.compare(
+    SubstHelper::apply((*demodulator)[0], subst),
+    SubstHelper::apply((*demodulator)[1], subst)
+  ) == Ordering::GREATER;
+}
+
+static void outputDemodulation(std::ostream &out, DHMap<unsigned, TermList> &conclSorts, Clause *concl) {
+  auto [left, right] = getParents<2>(concl);
+  auto rw = env.proofExtra.get<Inferences::RewriteInferenceExtra>(concl);
+
+  SimpleSubstitution subst;
+  Literal *rightLit = (*right)[0];
+  TermList target = rw.rewritten;
+  TermList from = isDemodulatorFor(rightLit, target)
+    ? (*rightLit)[0]
+    : (*rightLit)[1];
+  ASS(rightLit->isEquality())
+  ASS(rightLit->isPositive())
+  ASS(rightLit->termArg(0) == from || rightLit->termArg(1) == from)
+  ALWAYS(MatchingUtils::matchTerms(from, target, subst))
+
+  outputPremise(out, conclSorts, left->asClause());
+  outputPremise(out, conclSorts, right->asClause(), DoSimpleSubst(subst));
+  outputConclusion(out, conclSorts, concl->asClause());
+}
+
 namespace Shell {
 namespace SMTCheck {
 
@@ -350,6 +385,10 @@ void outputStep(std::ostream &out, Unit *u) {
     break;
   case InferenceRule::SUPERPOSITION:
     outputSuperposition(out, conclSorts, u->asClause());
+    break;
+  case InferenceRule::FORWARD_DEMODULATION:
+  case InferenceRule::BACKWARD_DEMODULATION:
+    outputDemodulation(out, conclSorts, u->asClause());
     break;
   default:
     sorry = true;
