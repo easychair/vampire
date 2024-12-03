@@ -14,14 +14,12 @@
 
 #include "CadicalInterfacing.hpp"
 
-#include "Lib/DArray.hpp"
-
 namespace SAT
 {
 
 using namespace Shell;
 using namespace Lib;
-  
+
 CadicalInterfacing::CadicalInterfacing(const Shell::Options& opts, bool generateProofs):
   _status(Status::SATISFIABLE)
 {
@@ -29,21 +27,6 @@ CadicalInterfacing::CadicalInterfacing(const Shell::Options& opts, bool generate
   // (or even forwarding them to vampire's options)  
 }
   
-/**
- * Make the solver handle clauses with variables up to @b newVarCnt
- * (but see vampireVar2Minisat!)
- */
-void CadicalInterfacing::ensureVarCount(unsigned newVarCnt)
-{
-  _solver.reserve(newVarCnt);
-}
-
-unsigned CadicalInterfacing::newVar()
-{
-  ensureVarCount(_solver.vars() + 1);
-  return _solver.vars();
-}
-
 SATSolver::Status CadicalInterfacing::solveUnderAssumptions(const SATLiteralStack& assumps, unsigned conflictCountLimit)
 {
   ASS(!hasAssumptions());
@@ -124,16 +107,18 @@ void CadicalInterfacing::addAssumption(SATLiteral lit)
 SATSolver::VarAssignment CadicalInterfacing::getAssignment(unsigned var)
 {
 	ASS_EQ(_status, Status::SATISFIABLE);
-	ASS_G(var,0); ASS_LE(var,_solver.vars() + 1);
+	ASS_G(var,0); ASS_L(var,_next);
 
-  int phase = _solver.val(vampire2Cadical(true, var));
+  if(var > _solver.vars())
+    return VarAssignment::DONT_CARE;
+  int phase = _solver.val(var);
   return phase > 0 ? VarAssignment::TRUE : VarAssignment::FALSE;
 }
 
 bool CadicalInterfacing::isZeroImplied(unsigned var)
 {
-  ASS_G(var,0); ASS_LE(var, _solver.vars() + 1);
-  return _solver.fixed(vampire2Cadical(true, var));
+  ASS_G(var,0); ASS_L(var, _next);
+  return _solver.fixed(var);
 }
 
 void CadicalInterfacing::collectZeroImplied(SATLiteralStack& acc)

@@ -72,9 +72,9 @@ public:
    */
   virtual SATClause* getZeroImpliedCertificate(unsigned var) override;
 
-  virtual void ensureVarCount(unsigned newVarCnt) override;
+  virtual void ensureVarCount(unsigned newVarCnt) override { _next = std::max(_next, int(newVarCnt) + 1); }
 
-  virtual unsigned newVar() override;
+  virtual unsigned newVar() override { return _next++; }
 
   virtual void suggestPolarity(unsigned var, unsigned pol) override {
     _solver.phase(vampire2Cadical(pol, var));
@@ -129,6 +129,7 @@ private:
     return SATLiteral(std::abs(cadical), cadical < 0);
   }
 
+  int _next;
   Status _status;
   std::vector<int> _assumptions;
   CaDiCaL::Solver _solver;
