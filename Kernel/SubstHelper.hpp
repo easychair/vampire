@@ -676,6 +676,8 @@ struct SimpleSubstitution
     return TermList(var, false);
   }
 
+  void reset() { bindings.clear(); }
+
   bool bind(unsigned var, TermList term)
   {
     auto [it, inserted] = bindings.insert({var, term});
@@ -684,5 +686,14 @@ struct SimpleSubstitution
 
   void specVar(unsigned var, TermList term) { ASSERTION_VIOLATION; }
 };
+
+inline std::ostream &operator<<(std::ostream &out, const SimpleSubstitution &subst) {
+  out << "[";
+  for(auto [left, right] : subst.bindings) {
+    out << " " << left << " -> " << right;
+  }
+  out << "]";
+  return out;
+}
 
 #endif /* __SubstHelper__ */

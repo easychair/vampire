@@ -18,6 +18,7 @@
 #include "Kernel/Clause.hpp"
 #include "Kernel/EqHelper.hpp"
 #include "Kernel/Matcher.hpp"
+#include "Kernel/MLVariant.hpp"
 #include "Kernel/RobSubstitution.hpp"
 #include "Kernel/SubstHelper.hpp"
 #include "Kernel/TermIterators.hpp"
@@ -1430,9 +1431,10 @@ static void outputAVATARSplitClause(std::ostream &out, Unit *derived) {
   ALWAYS(parents.hasNext())
   Clause *parent = parents.next()->asClause();
 
-  std::vector<Clause *> components;
+  std::vector<Clause *> componentsInOrder;
+  std::unordered_set<Clause *> components;
   std::vector<SATLiteral> splits;
-  out << "deduction" << derived->number() << " : Prf_clause (cl";
+  out << "def deduction" << derived->number() << " : Prf_clause (cl";
   while(parents.hasNext()) {
     Unit *parent = parents.next();
     auto dex = env.proofExtra.get<SplitDefinitionExtra>(parent);
@@ -1440,51 +1442,62 @@ static void outputAVATARSplitClause(std::ostream &out, Unit *derived) {
     out << " (cons ";
     unsigned component = dex.component->splits()->sval();
     outputSplit(out, component);
-    components.push_back(dex.component);
+    componentsInOrder.push_back(dex.component);
+    components.insert(dex.component);
     splits.push_back(Splitter::getLiteralFromName(component));
   }
   out << " ec";
-  for(int i = 0; i < components.size(); i++)
+  for(int i = 0; i < componentsInOrder.size(); i++)
     out << ")";
-  //out << ") :=";
-  out << ")";
-  return;
+  out << ") :=";
 
-  for(SATLiteral split : splits)
+  Stack<LiteralStack> disjointLiterals;
+  Splitter::getComponents(parent, disjointLiterals);
+
+  for(Clause *component : componentsInOrder) {
+    SATLiteral split = Splitter::getLiteralFromName(component->splits()->sval());
     out << " nsp" << split.var() << " : (Prf sp" << split.var() << " -> Prf false) =>";
-
-  unsigned closeParens = 0;
-  auto parentVars = variables(parent);
-  unsigned offset = 0;
-  for(unsigned i = 0; i < splits.size(); i++) {
-    out << " nsp" << splits[i].var();
-
-    // variables in numerical order
-    auto componentVars = variables(components[i]);
-    auto literals = canonicalise(components[i]);
-    // bind variables present in the derived clause
-    for(unsigned v : componentVars)
-      out << " (" << v + offset << " : El iota =>";
-    offset += componentVars.size() + 1;
-    // bind literals in the derived clause
-    for(Literal *l : literals) {
-      out << " (" << l << " : (Prf ";
-      outputLiteral(out, l, AlwaysCare {});
-      out << " -> Prf false) =>";
-    }
-    closeParens += componentVars.size() + literals.size();
   }
 
-  auto vars = variables(parent);
-  auto literals = canonicalise(parent);
-  out << " deduction" << parent->number();
-  for(unsigned var : vars)
-    out << " " << var;
-  for(Literal *l : literals)
-    out << " " << l;
+  unsigned closeParens = 0;
+  decltype(disjointLiterals)::Iterator classes(disjointLiterals);
+  while(classes.hasNext()) {
+    LiteralStack klass = classes.next();
+    Clause *found = nullptr;
+    SimpleSubstitution subst;
+    for(Clause *component : components) {
+      if(klass.size() == component->length()) {
+        subst.reset();
+        if(MLVariant::isVariant(klass.begin(), component, /*complementary=*/false, &subst)) {
+          found = component;
+          break;
+        }
+      }
+    }
+    ASS(found)
 
-  for(unsigned i = 0; i < closeParens; i++)
-    out << ")";
+    SATLiteral split = Splitter::getLiteralFromName(found->splits()->sval());
+    out << " nsp" << split.var();
+    for(unsigned foundVar : variables(found)) {
+      out << " (" << subst.apply(foundVar).var() << " : El iota =>";
+      closeParens++;
+    }
+    for(Literal *l : canonicalise(found)) {
+      Literal *lsubst = SubstHelper::apply(l, subst);
+      out << " (" << lsubst << " : (Prf ";
+      outputLiteral(out, l, AlwaysCare {}, DoSubstitution(subst));
+      out << " -> Prf false) =>";
+      closeParens++;
+    }
+  }
+
+  out << " deduction" << parent->number();
+  for(unsigned parentVar : variables(parent))
+    out << " " << parentVar;
+  for(Literal *l : canonicalise(parent))
+    out << " " << l;
+  while(closeParens--)
+    out << ')';
 }
 
 static void outputAVATARContradictionClause(std::ostream &out, Unit *contradiction) {

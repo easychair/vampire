@@ -391,7 +391,7 @@ using namespace MLVariant_AUX;
 /**
  *
  */
-bool MLVariant::isVariant(Literal* const * cl1Lits, Clause* cl2, LiteralList** alts)
+bool MLVariant::isVariant(Literal* const * cl1Lits, Clause* cl2, LiteralList** alts, SimpleSubstitution *map)
 {
   unsigned clen=cl2->length();
 
@@ -399,7 +399,6 @@ bool MLVariant::isVariant(Literal* const * cl1Lits, Clause* cl2, LiteralList** a
   if(!md) {
     return false;
   }
-
   static DArray<unsigned> matchRecord(32);
   unsigned matchRecordLen=clen;
   matchRecord.init(matchRecordLen,0xFFFFFFFF);
@@ -447,11 +446,16 @@ bool MLVariant::isVariant(Literal* const * cl1Lits, Clause* cl2, LiteralList** a
       currBLit--;
     }
   }
+
+  if(map)
+    for(unsigned i = 0; i < cl2->length(); i++)
+      ALWAYS(MatchingUtils::match(alts[i]->head(), cl1Lits[i], false, *map))
+
   return true;
 }
 
 
-bool MLVariant::isVariant(Literal* const * cl1Lits, Clause* cl2, bool complementary)
+bool MLVariant::isVariant(Literal* const * cl1Lits, Clause* cl2, bool complementary, SimpleSubstitution *map)
 {
   bool fail=false;
   unsigned clen=cl2->length();
@@ -478,7 +482,7 @@ bool MLVariant::isVariant(Literal* const * cl1Lits, Clause* cl2, bool complement
     }
   }
 
-  fail=!MLVariant::isVariant(cl1Lits,cl2,alts.array());
+  fail=!MLVariant::isVariant(cl1Lits,cl2,alts.array(),map);
 
 fin:
   for(unsigned i=0;i<clen;i++) {
