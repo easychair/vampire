@@ -368,13 +368,16 @@ static void outputLiteralPtr(
     out << ")";
 }
 
-static void outputSplit(std::ostream &out, unsigned splitName, bool flip = false) {
-  SATLiteral split = Splitter::getLiteralFromName(splitName);
+static void outputSplit(std::ostream &out, SATLiteral split, bool flip = false) {
   if(split.polarity() == flip)
     out << "(not ";
   out << "sp" << split.var();
   if(split.polarity() == flip)
     out << ")";
+}
+
+static void outputSplit(std::ostream &out, unsigned splitName, bool flip = false) {
+  outputSplit(out, Splitter::getLiteralFromName(splitName), flip);
 }
 
 static void outputClause(std::ostream &out, Clause *clause) {
@@ -1430,33 +1433,41 @@ static void outputAVATARSplitClause(std::ostream &out, Unit *derived) {
   UnitIterator parents = derived->getParents();
   ALWAYS(parents.hasNext())
   Clause *parent = parents.next()->asClause();
+  SATClause *sat = env.proofExtra.get<SplitClauseExtra>(derived).clause;
 
-  std::vector<Clause *> componentsInOrder;
-  std::unordered_set<Clause *> components;
-  std::vector<SATLiteral> splits;
-  out << "def deduction" << derived->number() << " : Prf_clause (cl";
+  std::unordered_map<unsigned, Clause *> components;
   while(parents.hasNext()) {
     Unit *parent = parents.next();
     auto dex = env.proofExtra.get<SplitDefinitionExtra>(parent);
     ASS(dex.component->isComponent())
-    out << " (cons ";
     unsigned component = dex.component->splits()->sval();
-    outputSplit(out, component);
-    componentsInOrder.push_back(dex.component);
-    components.insert(dex.component);
-    splits.push_back(Splitter::getLiteralFromName(component));
+    components.insert({component, dex.component});
+  }
+
+  out << "def deduction" << derived->number() << " : Prf_clause (cl";
+  for(unsigned i = 0; i < sat->length(); i++) {
+    out << " (cons ";
+    outputSplit(out, (*sat)[i]);
   }
   out << " ec";
-  for(int i = 0; i < componentsInOrder.size(); i++)
+  for(unsigned i = 0; i < sat->length(); i++)
     out << ")";
   out << ") :=";
 
   Stack<LiteralStack> disjointLiterals;
-  Splitter::getComponents(parent, disjointLiterals);
+  if(parent->length() == 1) {
+    LiteralStack component;
+    component.push((*parent)[0]);
+    disjointLiterals.push(std::move(component));
+  }
+  else
+    Splitter::getComponents(parent, disjointLiterals);
 
-  for(Clause *component : componentsInOrder) {
-    SATLiteral split = Splitter::getLiteralFromName(component->splits()->sval());
-    out << " nsp" << split.var() << " : (Prf sp" << split.var() << " -> Prf false) =>";
+  for(unsigned i = 0; i < sat->length(); i++) {
+    SATLiteral l = (*sat)[i];
+    out << " nsp" << l.var() << " : (Prf ";
+    outputSplit(out, l);
+    out << " -> Prf false) =>";
   }
 
   unsigned closeParens = 0;
@@ -1465,9 +1476,15 @@ static void outputAVATARSplitClause(std::ostream &out, Unit *derived) {
     LiteralStack klass = classes.next();
     Clause *found = nullptr;
     SimpleSubstitution subst;
-    for(Clause *component : components) {
+    bool flip = false;
+    for(auto [name, component] : components) {
       if(klass.size() == component->length()) {
         subst.reset();
+        if(klass.size() == 1 && klass[0]->ground() && Literal::positiveLiteral(klass[0]) == Literal::positiveLiteral((*component)[0])) {
+          found = component;
+          flip = klass[0] != (*component)[0];
+          break;
+        }
         if(MLVariant::isVariant(klass.begin(), component, /*complementary=*/false, &subst)) {
           found = component;
           break;
@@ -1483,6 +1500,8 @@ static void outputAVATARSplitClause(std::ostream &out, Unit *derived) {
       closeParens++;
     }
     for(Literal *l : canonicalise(found)) {
+      if(flip)
+        l = Literal::complementaryLiteral(l);
       Literal *lsubst = SubstHelper::apply(l, subst);
       out << " (" << lsubst << " : (Prf ";
       outputLiteral(out, l, AlwaysCare {}, DoSubstitution(subst));

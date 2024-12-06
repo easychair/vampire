@@ -57,6 +57,10 @@ using namespace std;
 using namespace Lib;
 using namespace Kernel;
 
+void SplitClauseExtra::output(std::ostream &out) const {
+  out << "XXX";
+}
+
 void SplitDefinitionExtra::output(std::ostream &out) const {
   out << "XXX";
 }
@@ -966,6 +970,8 @@ bool Splitter::handleNonSplittable(Clause* cl)
 
     Formula* f = JunctionFormula::generalJunction(OR,resLst);
     FormulaUnit* scl = new FormulaUnit(f,NonspecificInferenceMany(InferenceRule::AVATAR_SPLIT_CLAUSE,ps));
+    if(env.options->proofExtra() == Options::ProofExtra::FULL)
+      env.proofExtra.insert(scl, new SplitClauseExtra(nsClause));
 
     nsClause->setInference(new FOConversionInference(scl));
 
@@ -1155,6 +1161,8 @@ bool Splitter::doSplitting(Clause* cl)
 
   Formula* f = JunctionFormula::generalJunction(OR,resLst);
   FormulaUnit* scl = new FormulaUnit(f,NonspecificInferenceMany(InferenceRule::AVATAR_SPLIT_CLAUSE,ps));
+  if(env.options->proofExtra() == Options::ProofExtra::FULL)
+    env.proofExtra.insert(scl, new SplitClauseExtra(splitClause));
 
   splitClause->setInference(new FOConversionInference(scl));
 
