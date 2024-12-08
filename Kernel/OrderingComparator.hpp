@@ -57,6 +57,7 @@ protected:
   };
 
   struct Node;
+  struct Polynomial;
 
   struct Branch {
     Node* node() const { return _node; }
@@ -78,6 +79,9 @@ protected:
     template<typename S, typename T> Branch(S&& s, T&& t) {
       setNode(new Node(std::forward<S>(s), std::forward<T>(t)));
     }
+    Branch(const Polynomial* p) {
+      setNode(new Node(p));
+    }
     ~Branch();
     Branch(const Branch& other);
     Branch& operator=(const Branch& other);
@@ -90,8 +94,17 @@ protected:
 
   friend std::ostream& operator<<(std::ostream& out, const Node& node);
   friend std::ostream& operator<<(std::ostream& out, const BranchTag& t);
+  friend std::ostream& operator<<(std::ostream& out, const Polynomial& poly);
 
   using VarCoeffPair = std::pair<unsigned,int>;
+
+  struct Polynomial {
+    static const Polynomial* get(int constant, const Stack<VarCoeffPair>& vcs);
+
+    int constant;
+    Stack<VarCoeffPair> pos;
+    Stack<VarCoeffPair> neg;
+  };
 
   using Trace = TermPartialOrdering;
 
@@ -120,8 +133,8 @@ protected:
       : tag(T_RESULT), result(result) {}
     explicit Node(TermList lhs, TermList rhs)
       : tag(T_TERM), lhs(lhs), rhs(rhs) {}
-    explicit Node(uint64_t w, Stack<VarCoeffPair>* varCoeffPairs)
-      : tag(T_POLY), w(w), varCoeffPairs(varCoeffPairs) {}
+    explicit Node(const Polynomial* p)
+      : tag(T_POLY), poly(p) {}
     Node(const Node&) = delete;
     Node& operator=(const Node&) = delete;
 
@@ -136,11 +149,10 @@ protected:
     union {
       bool result;
       TermList lhs;
-      int64_t w;
+      const Polynomial* poly;
     };
     union {
       TermList rhs;
-      Stack<VarCoeffPair>* varCoeffPairs;
     };
 
     Branch gtBranch;
