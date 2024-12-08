@@ -443,6 +443,8 @@ void OrderingComparator::processPolyCase()
     i++;
   }
 
+  // TODO HERE
+
   if (node->w == 0 && pos == 0 && neg == 0) {
     *_curr = node->eqBranch;
     return;
