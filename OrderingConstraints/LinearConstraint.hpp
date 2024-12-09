@@ -40,6 +40,7 @@ namespace Ordering
 
       unsigned allocated_size = 0;
 
+
       /**
        * The element flowMatrix[i][j] contains the flow from posVars[i] to negVars[j]
        */
@@ -59,6 +60,19 @@ namespace Ordering
       bool pruneLevel1();
 
       bool preProcess();
+
+      std::vector<bool> seenX;
+      std::vector<bool> seenY;
+
+      bool dfsX(VarAlias x, std::vector<VarAlias>& path);
+
+      bool dfsY(VarAlias y, std::vector<VarAlias>& path);
+
+      Flow findPath(VarAlias sink, std::vector<VarAlias>& path);
+
+      bool search();
+
+      Comparison solve();
 
       void removeXVariable(VarAlias xAlias);
 

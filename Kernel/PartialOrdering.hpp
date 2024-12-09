@@ -16,6 +16,7 @@
 #define __PartialOrdering__
 
 #include <string>
+#include <cstdint>
 
 namespace Kernel {
 

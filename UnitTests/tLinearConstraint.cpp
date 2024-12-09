@@ -15,6 +15,9 @@
 #include "OrderingConstraints/SparseMatrix.hpp"
 #include "OrderingConstraints/LinearConstraint.hpp"
 
+#include <algorithm>
+#include <random>
+
 using namespace std;
 using namespace Lib;
 using namespace Test;
@@ -139,7 +142,25 @@ TEST_FUN(LinearConstraintPreprocessed) {
   affineFunc.push_back(make_pair(3, -1));
 
   ASS(lc.getSign(affineFunc, partialOrdering, 0) == Greater);
+}
 
+
+
+/**
+ * @brief Suffles the positive variables and the negative variables while maintaining the partition.
+ * @example 3 X0 + 2 X1 + X2 - 2 Y0 - Y1 - 3 Y2 could become
+ *          2 X1 + 3 X0 + X2 - Y1 - 3 Y2 - 2 Y0
+ */
+static void shuffleEquation(vector<pair<VarNum, Coeff>>& affinFunc, unsigned nPos) {
+  auto rng = std::default_random_engine {};
+  std::shuffle(affinFunc.begin(), affinFunc.begin() + nPos, rng);
+  std::shuffle(affinFunc.begin() + nPos, affinFunc.end(), rng);
+}
+
+TEST_FUN(LinearConstraintGreedyNotWorking) {
+  LinearConstraint lc;
+  vector<vector<bool>> partialOrdering;
+  vector<pair<VarNum, Coeff>> affineFunc;
   /**
    * poly 0 + 2 * X0 + 2 * X1 + 2 * X2 + 2 * X3 - 2 * Y0 - 3 * Y1 - 1 * Y2 - 2 * Y3
    * X0 Y0
@@ -177,5 +198,25 @@ TEST_FUN(LinearConstraintPreprocessed) {
   affineFunc.push_back(make_pair(6, -2));
   affineFunc.push_back(make_pair(7, -1));
 
+  shuffleEquation(affineFunc, 4);
+
   ASS(lc.getSign(affineFunc, partialOrdering, 0) == Greater);
+
+  /**
+   * poly 0 + 2 * X4 + 2 * X2 + 2 * X5 + 2 * X1 + 2 * X0 + 2 * X3 - 3 * Y1 - 2 * Y4 - 1 * Y5 - 2 * Y3 - 2 * Y0 - 2 * Y2
+   * X0 Y0
+   * X0 Y1
+   * X1 Y0
+   * X1 Y1
+   * X2 Y2
+   * X2 Y3
+   * X2 Y1
+   * X3 Y2
+   * X3 Y3
+   * X4 Y4
+   * X4 Y5
+   * X4 Y3
+   * X5 Y4
+   * X5 Y5
+   */
 }

@@ -92,7 +92,6 @@ bool Ordering::LinearConstraint::setOrdering(const std::vector<std::pair<VarNum,
       if (partialOrdering[xIndex][yIndex]) {
         VarAlias xAlias = xIndex;
         VarAlias yAlias = yIndex - nPosVars;
-        cout << "Setting " << xAlias << " > " << yAlias << endl;
         greaterThanY.set(yAlias, xAlias, true);
         smallerThanX.set(xAlias, yAlias, true);
       }
@@ -190,6 +189,172 @@ bool Ordering::LinearConstraint::preProcess()
   return true;
 }
 
+bool Ordering::LinearConstraint::dfsX(VarAlias x, std::vector<VarAlias> &path)
+{
+  seenX[x] = true;
+  auto transfers = flowMatrix.getSetOnRow(x);
+  if (transfers.size() == 0)
+    return false;
+
+  if (capacities[x] > 0) {
+    path.push_back(x);
+    return true;
+  }
+
+  for (auto p : transfers) {
+    VarAlias y = p.first;
+    ASS(p.second != 0);
+    if (!seenY[y] && dfsY(y, path)) {
+      path.push_back(x);
+      return true;
+    }
+  }
+  return false;
+}
+
+bool Ordering::LinearConstraint::dfsY(VarAlias y, std::vector<VarAlias> &path)
+{
+  seenY[y] = true;
+  auto greaterXs = greaterThanY.getSetOnRow(y);
+  if (greaterXs.size() == 0)
+    return false;
+  
+  for (auto p : greaterXs) {
+    VarAlias x = p.first;
+    if (!seenX[x] && dfsX(x, path)) {
+      path.push_back(y);
+      return true;
+    }
+  }
+  return false;
+}
+
+Flow Ordering::LinearConstraint::findPath(VarAlias sink, std::vector<VarAlias> &path)
+{
+  seenX.clear();
+  seenX.resize(nPosVars, false);
+  seenY.clear();
+  seenY.resize(nNegVars, false);
+
+  if (!dfsY(sink, path))
+    return 0;
+  // reverse the path
+  reverse(path.begin(), path.end());
+  ASS(path.size() % 2 == 0);
+  // The path should look like [y0, x0, y1, ..., xn]
+  Flow bottleneck = min(capacities[path.back()], requirements[path[0]]);
+  for (unsigned i = 1; i < path.size(); i += 2)
+    bottleneck = min(bottleneck, flowMatrix.get(path[i], path[i + 1], 0));
+  ASS(bottleneck != 0);
+
+  return bottleneck;
+}
+
+bool Ordering::LinearConstraint::search()
+{
+  cout << "Solve the control flow problem" << endl;
+  // Uses the maximim flow problem to find maches between the ys and the xs
+  // TODO here find heuristic to bette choose the order of ys
+  for (VarAlias y = 0; y < nNegVars; y++) {
+    // requirement left for y
+    auto greaterXs = greaterThanY.getSetOnRow(y);
+    ASS(greaterXs.size() > 1);
+
+    // first try to find some x with non zero capacity
+    // TODO here find heuristic to bette choose the order of xs
+    for (auto p : greaterXs) {
+      Flow b = requirements[y];
+      ASS(b > 0);
+      VarAlias x = p.first;
+      // capacity left for x
+      Flow a = capacities[x];
+      ASS(a >= 0);
+      if (a == 0)
+        continue;
+      // transfered value
+      Flow t = min(a, b);
+      flowMatrix.set(x, y, flowMatrix.get(x, y, 0) + t);
+      capacities[x] -= t;
+      requirements[y] -= t;
+      cout << "Greedily transfered " << t << " from x" << x << " to y"  << y << endl;
+      if (b == t)
+        break;
+    }
+    if (requirements[y] == 0)
+      continue;
+
+    // we failed to simplify y with the remaining x
+    // we need to redirect some of the flow
+    vector<VarAlias> path;
+    while (requirements[y] > 0) {
+      // We search for a path from which to redirect the flow.
+      /**
+       *     0/1    0/1    1/2
+       *     x0     x1     x2
+       *     |    / |    / 
+       *    1|  0/ 1|  1/
+       *     |  /   |  /
+       *     y0     y1
+       *     1/2    2/2
+       * Here, for example, y0 needs one more, but cannot draw if from either x0 nor x1
+       * So we find the path [y0, x1, y1, x2] such that
+       * - x2 now gives to y1, 
+       * - x1 now gives to y0
+       *     0/1    0/1    0/2
+       *     x0     x1     x2
+       *     |    / |    / 
+       *    1|  1/ 0|  2/
+       *     |  /   |  /
+       *     y0     y1
+       *     2/2    2/2
+       */
+      Flow tranfer = findPath(y, path);
+      ASS(tranfer >= 0);
+      if (tranfer == 0) {
+        cout << "Failed to find a path" << endl;
+        cout << to_string() << endl;
+        return false;
+      }
+      // for each upstream edge, increase the flow.
+      // for each downstream edge, decrease the flow.
+      for (unsigned i = 0; i < path.size(); i++) {
+        if (i % 2 == 0) {
+          // upstream edge
+          VarAlias y = path[i];
+          VarAlias x = path[i+1];
+          flowMatrix.set(x, y, flowMatrix.get(x, y, 0) + tranfer);
+        } else {
+          // downstream edge
+          VarAlias x = path[i];
+          VarAlias y = path[i+1];
+          flowMatrix.set(x, y, flowMatrix.get(x, y, 0) - tranfer);
+          ASS(flowMatrix.get(x, y, 0) >= 0)
+          if (flowMatrix.get(x, y, 0) == 0) {
+            flowMatrix.del(x, y);
+          }
+        }
+      }
+      capacities[path.back()] -= tranfer;
+      requirements[y] -= tranfer;
+    }
+    if (requirements[y] > 0)
+      return false;
+  }
+  return true;
+}
+
+Ordering::Comparison Ordering::LinearConstraint::solve()
+{
+  
+  cout << "setOrdering done" << endl;
+  cout << to_string() << endl;
+  if (!preProcess())
+    return Comparison::Incomparable;
+  if (search())
+    return sumCoeffs > 0 ? Comparison::Greater : Comparison::Less;
+  return Comparison::Incomparable;
+}
+
 void Ordering::LinearConstraint::removeXVariable(VarAlias xAlias)
 {
   capacities[xAlias] = capacities.back();
@@ -268,14 +433,7 @@ Ordering::Comparison LinearConstraint::getSign(const vector<pair<VarNum, Coeff>>
     return Comparison::Incomparable;
   if (!setOrdering(affineFunc, partialOrdering))
     return Comparison::Incomparable;
-  // todo deal with the case when sumCoeffs is 0
-  if (!preProcess())
-    return Comparison::Incomparable;
-  if (nNegVars == 0)
-    return sumCoeffs > 0 ? Comparison::Greater : Comparison::Less;
-
-
-  return Incomparable;
+  return solve();
 }
 
 Ordering::Comparison LinearConstraint::getSign(const vector<pair<VarNum, Coeff>>& affineFunc,
@@ -293,15 +451,6 @@ Ordering::Comparison LinearConstraint::getSign(const vector<pair<VarNum, Coeff>>
     cout << "setOrdering failed" << endl;
     return Comparison::Incomparable;
   }
-  cout << "setOrdering done" << endl;
-  cout << to_string() << endl;
-  if (!preProcess())
-    return Comparison::Incomparable;
-  if (nNegVars == 0) {
-    cout << "Success!" << endl;
-    cout << to_string() << endl;
-    return sumCoeffs > 0 ? Comparison::Greater : Comparison::Less;
-  }
 
-  return Incomparable;
+  return solve();
 }
