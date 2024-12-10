@@ -427,6 +427,20 @@ static void outputAxiomName(std::ostream &out, Unit *axiom) {
     out << axiom->number();
 }
 
+static void outputSplitSet(std::ostream &out, SplitSet &splits) {
+  for(unsigned i = 0; i < splits.size(); i++) {
+    SATLiteral split = Splitter::getLiteralFromName(splits[i]);
+    out << " nnsp" << split.var();
+    out << " : (Prf";
+    if(!split.polarity())
+      out << " (not";
+    out <<  " (not sp" << split.var();
+    if(!split.polarity())
+      out << ")";
+    out << ") -> Prf false) =>";
+  }
+}
+
 static void outputDeductionPrefix(std::ostream &out, Unit *deduction) {
   // we don't support non-clause deductions yet
   ASS(deduction->isClause())
@@ -439,18 +453,7 @@ static void outputDeductionPrefix(std::ostream &out, Unit *deduction) {
   if(clause->noSplits())
     return;
 
-  SplitSet &splits = *clause->splits();
-  for(unsigned i = 0; i < splits.size(); i++) {
-    SATLiteral split = Splitter::getLiteralFromName(splits[i]);
-    out << " nnsp" << split.var();
-    out << " : (Prf";
-    if(!split.polarity())
-      out << " (not";
-    out <<  " (not sp" << split.var();
-    if(!split.polarity())
-      out << ")";
-    out << ") -> Prf false) =>";
-  }
+  outputSplitSet(out, *clause->splits());
 }
 
 static void outputParentWithSplits(std::ostream &out, Clause *parent) {
@@ -1444,15 +1447,34 @@ static void outputAVATARSplitClause(std::ostream &out, Unit *derived) {
     components.insert({component, dex.component});
   }
 
-  out << "def deduction" << derived->number() << " : Prf_clause (cl";
+  DHSet<SATLiteral> splitSet;
+  if(!parent->noSplits()) {
+    SplitSet &splits = *parent->splits();
+    for(unsigned i = 0; i < splits.size(); i++)
+      splitSet.insert(Splitter::getLiteralFromName(splits[i]));
+  }
+  std::vector<SATLiteral> existingSplits, newSplits;
   for(unsigned i = 0; i < sat->length(); i++) {
+    if(splitSet.contains((*sat)[i]))
+      existingSplits.push_back((*sat)[i]);
+    else
+      newSplits.push_back((*sat)[i]);
+  }
+
+  out << "def deduction" << derived->number() << " : Prf_av_clause";
+  for(SATLiteral sl : existingSplits) {
+    out << " (if ";
+    outputSplit(out, sl);
+  }
+  out << " (acl (cl";
+  for(SATLiteral sl : newSplits) {
     out << " (cons ";
-    outputSplit(out, (*sat)[i]);
+    outputSplit(out, sl);
   }
   out << " ec";
   for(unsigned i = 0; i < sat->length(); i++)
     out << ")";
-  out << ") :=";
+  out << ")) :=";
 
   Stack<LiteralStack> disjointLiterals;
   if(parent->length() == 1) {
@@ -1463,9 +1485,13 @@ static void outputAVATARSplitClause(std::ostream &out, Unit *derived) {
   else
     Splitter::getComponents(parent, disjointLiterals);
 
-  for(unsigned i = 0; i < sat->length(); i++) {
-    SATLiteral l = (*sat)[i];
-    out << " nsp" << l.var() << " : (Prf ";
+  for(SATLiteral l : existingSplits) {
+    out << " nnsp" << l.var() << " : ((Prf ";
+    outputSplit(out, l);
+    out << " -> Prf false) -> Prf false) =>";
+  }
+  for(SATLiteral l : newSplits) {
+    out << " nnsp" << l.var() << " : (Prf ";
     outputSplit(out, l);
     out << " -> Prf false) =>";
   }
@@ -1494,7 +1520,7 @@ static void outputAVATARSplitClause(std::ostream &out, Unit *derived) {
     ASS(found)
 
     SATLiteral split = Splitter::getLiteralFromName(found->splits()->sval());
-    out << " nsp" << split.var();
+    out << " nnsp" << split.var();
     for(unsigned foundVar : variables(found)) {
       out << " (" << subst.apply(foundVar).var() << " : El iota =>";
       closeParens++;
@@ -1510,7 +1536,8 @@ static void outputAVATARSplitClause(std::ostream &out, Unit *derived) {
     }
   }
 
-  out << " deduction" << parent->number();
+  out << ' ';
+  outputParentWithSplits(out, parent);
   for(unsigned parentVar : variables(parent))
     out << " " << parentVar;
   for(Literal *l : canonicalise(parent))
