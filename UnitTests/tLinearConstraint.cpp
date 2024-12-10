@@ -23,19 +23,37 @@ using namespace Lib;
 using namespace Test;
 using namespace Ordering;
 
-TEST_FUN(MatrixRetrieval) {
-  SparseMatrix<int> matrix(3, 3);
+TEST_FUN(MatrixRetrieval01) {
+  SparseMatrix<int> matrix(3, 3, -1);
   matrix.set(0, 0, 1);
 
-  ASS_EQ(matrix.get(0, 0, 0), 1);
+  ASS_EQ(matrix.get(0, 0), 1);
   for (unsigned i = 0; i < 3; i++)
     for (unsigned j  = 0; j < 3; j++)
       if (i != 0 || j != 0)
-        ASS_EQ(matrix.get(i, j, 0), 0);
+        ASS_EQ(matrix.get(i, j), -1);
+}
+
+TEST_FUN(MatrixRetrieval02) {
+  SparseMatrix<int> matrix(1, 5, -1);
+  for (unsigned i = 0; i < 5; i++) {
+    matrix.set(0, i, i);
+  }
+
+  for (int i = 0; i < 5; i++)
+    ASS_EQ(matrix.get(0, i), i);
+
+}
+
+TEST_FUN(MatrixNothingSet) {
+  SparseMatrix<int> matrix(3, 3, -1);
+  for (unsigned i = 0; i < 3; i++)
+    for (unsigned j  = 0; j < 3; j++)
+      ASS_EQ(matrix.get(i, j), -1);
 }
 
 TEST_FUN(MatrixCheckSliceOrder01) {
-  SparseMatrix<int> matrix(1, 5);
+  SparseMatrix<int> matrix(1, 5, 0);
   matrix.set(0, 3, 8);
   vector<pair<unsigned, int>>& nonZeros = matrix.getSetOnRow(0);
   ASS_EQ(nonZeros.size(), 1);
@@ -72,7 +90,7 @@ TEST_FUN(MatrixCheckSliceOrder01) {
 }
 
 TEST_FUN(MatrixCheckSliceOrder02) {
-  SparseMatrix<int> matrix(1, 5);
+  SparseMatrix<int> matrix(1, 5, 0);
   matrix.set(0, 1, 6);
   matrix.set(0, 3, 8);
   matrix.set(0, 1, 11);
@@ -87,69 +105,326 @@ TEST_FUN(MatrixCheckSliceOrder02) {
   ASS_EQ(nonZeros[2].second, 9);
 }
 
-TEST_FUN(MatrixCheckSetGetOptimization) {
-  SparseMatrix<int> matrix(1, 5);
+TEST_FUN(MatrixCheckDeletion) {
+  SparseMatrix<int> matrix(1, 5, -1);
+  for (int i = 0; i < 5; i++)
+    matrix.set(0, i, 5 + i);
+  matrix.set(0, 3, -1);
+  auto nonZeros = matrix.getSetOnRow(0);
+  ASS_EQ(nonZeros.size(), 4);
+  for (int i = 0; i < 5; i++) {
+    if (i == 3)
+      continue;
+    unsigned index = i - (i >= 3);
+    ASS_EQ(nonZeros[index].first, (VarNum) i);
+    ASS_EQ(nonZeros[index].second, 5 + i);
+  }
+}
+
+TEST_FUN(MatrixCheckSetGetOptimization00) {
+  SparseMatrix<int> matrix(1, 6, -1);
   matrix.set(0, 1, 6);
   matrix.set(0, 5, 5);
   matrix.set(0, 3, 8);
-  ASS_EQ(matrix.get(0, 3, -1), 8);
-  matrix.set(0, 5, matrix.get(0, 5, -1) + 1);
-  ASS_EQ(matrix.get(0, 5, -1), 6);
+  ASS_EQ(matrix.get(0, 3), 8);
+  matrix.set(0, 5, matrix.get(0, 5) + 1);
+  ASS_EQ(matrix.get(0, 5), 6);
+}
+
+TEST_FUN(MatrixCheckSetGetOptimization01) {
+  SparseMatrix<int> matrix(1, 2, -1);
+  matrix.set(0, 0, 1);
+  ASS_EQ(matrix.get(0, 0), 1);
+  matrix.set(0, 0, -1);
+  ASS_EQ(matrix.get(0, 0), -1);
 }
 
 
-TEST_FUN(LinearConstraintPreprocessed) {
+/**************************************************************************************************
+ *                                   LINEAR CONSTRAINTS
+ *************************************************************************************************/
+
+#define SETUP(nPosVars, nNegVars)             \
+LinearConstraint lc;                          \
+vector<vector<bool>> partialOrdering;         \
+vector<pair<VarNum, Coeff>> affineFunc;       \
+unsigned nPos = nPosVars;                     \
+unsigned nNeg = nNegVars;                     \
+unsigned total = nPos + nNeg;                 \
+partialOrdering.resize(total);                \
+for (unsigned i = 0; i < total; i++) {        \
+  partialOrdering[i] = vector(total, false);  \
+}
+
+TEST_FUN(Trivial01) {
   /**
-   *  0 + X0 - X1 >? 0
-   *  X0 > X1
+   * 0 + X0 - X1 >? 0
+   * X0 > X1
    */
-  LinearConstraint lc;
-  vector<vector<bool>> partialOrdering;
-  partialOrdering.resize(2);
-  partialOrdering[0].resize(2);
-  partialOrdering[1].resize(2);
-  partialOrdering[0][0] = false;
+  SETUP(1, 1);
   partialOrdering[0][1] = true;
-  partialOrdering[1][0] = false;
-  partialOrdering[1][1] = false;
 
-
-  vector<pair<VarNum, Coeff>> affineFunc;
   affineFunc.push_back(make_pair(0, 1));
   affineFunc.push_back(make_pair(1, -1));
 
-  ASS(lc.getSign(affineFunc, partialOrdering, 0) == Greater);
+  ASS_EQ(lc.getSign(affineFunc, partialOrdering,  1), Incomparable);
+  ASS_EQ(lc.getSign(affineFunc, partialOrdering,  0), Greater);
+  ASS_EQ(lc.getSign(affineFunc, partialOrdering, -1), Greater);
+}
 
+TEST_FUN(Trivial02) {
+  /**
+   * 0 + X0 - X1 >? 0
+   * X0 > X1
+   */
+  SETUP(1, 1);
+  partialOrdering[1][0] = true;
+
+  affineFunc.push_back(make_pair(0, 1));
+  affineFunc.push_back(make_pair(1, -1));
+
+  ASS_EQ(lc.getSign(affineFunc, partialOrdering,  1), Less);
+  ASS_EQ(lc.getSign(affineFunc, partialOrdering,  0), Less);
+  ASS_EQ(lc.getSign(affineFunc, partialOrdering, -1), Incomparable);
+}
+
+TEST_FUN(Trivial03) {
+  /**
+   * poly c + 2 * X0 - X1
+   * X0 X1
+   */
+  SETUP(1, 1);
+  partialOrdering[0][1] = true;
+
+  affineFunc.push_back(make_pair(0, 2));
+  affineFunc.push_back(make_pair(1, -1));
+
+  ASS_EQ(lc.getSign(affineFunc, partialOrdering, -1), Greater);
+  ASS_EQ(lc.getSign(affineFunc, partialOrdering, 0), Greater);
+  ASS_EQ(lc.getSign(affineFunc, partialOrdering, 1), Greater);
+  ASS_EQ(lc.getSign(affineFunc, partialOrdering, 2), Incomparable);
+}
+
+TEST_FUN(Trivial04) {
+  /**
+   * c + X0 + X1 >? 0
+   */
+  SETUP(1, 1);
+  partialOrdering[1][0] = true;
+
+
+  affineFunc.push_back(make_pair(0, 1));
+  affineFunc.push_back(make_pair(1, 1));
+
+  ASS_EQ(lc.getSign(affineFunc, partialOrdering, -1), Greater);
+  ASS_EQ(lc.getSign(affineFunc, partialOrdering, 0), Greater);
+  ASS_EQ(lc.getSign(affineFunc, partialOrdering, 1), Greater);
+  ASS_EQ(lc.getSign(affineFunc, partialOrdering, 2), Greater);
+  ASS_EQ(lc.getSign(affineFunc, partialOrdering, 3), Incomparable);
+}
+
+TEST_FUN(Trivial05) {
+  /**
+   * c - X0 - X1 >? 0
+   */
+  SETUP(1, 1);
+  partialOrdering[1][0] = true;
+
+
+  affineFunc.push_back(make_pair(0, -1));
+  affineFunc.push_back(make_pair(1, -1));
+
+  ASS_EQ(lc.getSign(affineFunc, partialOrdering, -3), Incomparable);
+  ASS_EQ(lc.getSign(affineFunc, partialOrdering, -2), Less);
+  ASS_EQ(lc.getSign(affineFunc, partialOrdering, -1), Less);
+  ASS_EQ(lc.getSign(affineFunc, partialOrdering, 0), Less);
+  ASS_EQ(lc.getSign(affineFunc, partialOrdering, 1), Less);
+}
+
+TEST_FUN(Imbalanced00) {
+  /**
+   * poly X0 + X1 - 2 * X2
+   * X0 X2
+   * X1 X2
+   */
+  SETUP(2, 1);
+  partialOrdering[0][2] = true;
+  partialOrdering[1][2] = true;
+
+  affineFunc.push_back(make_pair(0, 1));
+  affineFunc.push_back(make_pair(1, 1));
+  affineFunc.push_back(make_pair(2, -2));
+
+  ASS_EQ(lc.getSign(affineFunc, partialOrdering, 1), Incomparable);
+  ASS_EQ(lc.getSign(affineFunc, partialOrdering, 0), Greater);
+  ASS_EQ(lc.getSign(affineFunc, partialOrdering, -1), Greater);
+}
+
+TEST_FUN(Imbalanced01) {
+  /**
+   * poly X0 + X1 - 2 * X2
+   * X2 X0
+   * X2 X1
+   */
+  SETUP(2, 1);
+  partialOrdering[2][0] = true;
+  partialOrdering[2][1] = true;
+
+  affineFunc.push_back(make_pair(0, 1));
+  affineFunc.push_back(make_pair(1, 1));
+  affineFunc.push_back(make_pair(2, -2));
+
+  ASS_EQ(lc.getSign(affineFunc, partialOrdering, 1), Less);
+  ASS_EQ(lc.getSign(affineFunc, partialOrdering, 0), Less);
+  ASS_EQ(lc.getSign(affineFunc, partialOrdering, -1), Incomparable);
+}
+
+TEST_FUN(Imbalanced02) {
+  /**
+   * poly 2 * X0 - X1 - X2
+   * X0 X1
+   * X0 X2
+   */
+  SETUP(1, 2);
+  partialOrdering[0][1] = true;
+  partialOrdering[0][2] = true;
+
+  affineFunc.push_back(make_pair(0, 2));
+  affineFunc.push_back(make_pair(1, -1));
+  affineFunc.push_back(make_pair(2, -1));
+
+  ASS_EQ(lc.getSign(affineFunc, partialOrdering, 1), Incomparable);
+  ASS_EQ(lc.getSign(affineFunc, partialOrdering, 0), Greater);
+  ASS_EQ(lc.getSign(affineFunc, partialOrdering, -1), Greater);
+}
+
+TEST_FUN(Imbalanced03) {
+  /**
+   * poly 2 * X0 - X1 - X2
+   * X1 X0
+   * X2 X0
+   */
+  SETUP(1, 2);
+  partialOrdering[1][0] = true;
+  partialOrdering[2][0] = true;
+
+  affineFunc.push_back(make_pair(0, 2));
+  affineFunc.push_back(make_pair(1, -1));
+  affineFunc.push_back(make_pair(2, -1));
+
+  ASS_EQ(lc.getSign(affineFunc, partialOrdering, 1), Less);
+  ASS_EQ(lc.getSign(affineFunc, partialOrdering, 0), Less);
+  ASS_EQ(lc.getSign(affineFunc, partialOrdering, -1), Incomparable);
+}
+
+TEST_FUN(Imbalanced04) {
+  /**
+   * poly 0 + X0 - X1 - X2
+   * X1 X0
+   * X2 X0
+   */
+  SETUP(1, 2);
+  partialOrdering[1][0] = true;
+  partialOrdering[2][0] = true;
+
+
+  affineFunc.push_back(make_pair(0, 1));
+  affineFunc.push_back(make_pair(1, -1));
+  affineFunc.push_back(make_pair(2, -1));
+
+  ASS_EQ(lc.getSign(affineFunc, partialOrdering, 1), Less);
+  ASS_EQ(lc.getSign(affineFunc, partialOrdering, 0), Less);
+  ASS_EQ(lc.getSign(affineFunc, partialOrdering, -1), Less);
+  ASS_EQ(lc.getSign(affineFunc, partialOrdering, -2), Incomparable);
+}
+
+TEST_FUN(Imbalanced05) {
+  /**
+   * poly 1 + X0 + X1 - X2
+   * X0 X2
+   */
+  SETUP(2, 1);
+  partialOrdering[0][2] = true;
+
+
+  affineFunc.push_back(make_pair(0, 1));
+  affineFunc.push_back(make_pair(1, 1));
+  affineFunc.push_back(make_pair(2, -1));
+
+  ASS_EQ(lc.getSign(affineFunc, partialOrdering, 2), Incomparable);
+  ASS_EQ(lc.getSign(affineFunc, partialOrdering, 1), Greater);
+  ASS_EQ(lc.getSign(affineFunc, partialOrdering, 0), Greater);
+  ASS_EQ(lc.getSign(affineFunc, partialOrdering, -1), Greater);
+}
+
+TEST_FUN(Real00) {
+  /**
+   */
   /**
    * 0 + 2X0 + 2X1 - 3Y0 - Y1
    * X0 > Y0
    * X1 > Y0
    * X1 > Y1
    */
-  partialOrdering.clear();
-  partialOrdering.resize(4);
-  for (unsigned i = 0; i < 4; i++) {
-    partialOrdering[i] = vector(4, false);
-  }
+  SETUP(2, 2);
+
   partialOrdering[0][2] = true;
   partialOrdering[1][2] = true;
   partialOrdering[1][3] = true;
 
-  affineFunc.clear();
   affineFunc.push_back(make_pair(0, 2));
   affineFunc.push_back(make_pair(1, 2));
   affineFunc.push_back(make_pair(2, -3));
   affineFunc.push_back(make_pair(3, -1));
 
-  ASS(lc.getSign(affineFunc, partialOrdering, 0) == Greater);
+  ASS_EQ(lc.getSign(affineFunc, partialOrdering, 0), Greater);
+}
+
+TEST_FUN(Symmetric00) {
+  /**
+   * poly X0 + X1 - X2 - X3
+   * X0 X2
+   * X1 X3
+   */
+  SETUP(2, 2);
+  partialOrdering[0][2] = true;
+  partialOrdering[1][3] = true;
+
+  affineFunc.push_back(make_pair(0, 1));
+  affineFunc.push_back(make_pair(1, 1));
+  affineFunc.push_back(make_pair(2, -1));
+  affineFunc.push_back(make_pair(3, -1));
+
+  ASS_EQ(lc.getSign(affineFunc, partialOrdering, 1), Incomparable);
+  ASS_EQ(lc.getSign(affineFunc, partialOrdering, 0), Greater);
+  ASS_EQ(lc.getSign(affineFunc, partialOrdering, -1), Greater);
+}
+
+TEST_FUN(Symmetric01) {
+  /**
+   * poly X0 + X1 - X2 - X3
+   * X2 X0
+   * X3 X1
+   */
+  SETUP(2, 2);
+  partialOrdering[2][0] = true;
+  partialOrdering[3][1] = true;
+
+  affineFunc.push_back(make_pair(0, 1));
+  affineFunc.push_back(make_pair(1, 1));
+  affineFunc.push_back(make_pair(2, -1));
+  affineFunc.push_back(make_pair(3, -1));
+
+  ASS_EQ(lc.getSign(affineFunc, partialOrdering, 1), Less);
+  ASS_EQ(lc.getSign(affineFunc, partialOrdering, 0), Less);
+  ASS_EQ(lc.getSign(affineFunc, partialOrdering, -1), Incomparable);
 }
 
 
-
 /**
- * @brief Suffles the positive variables and the negative variables while maintaining the partition.
+ * @brief Shuffles the positive variables and the negative variables while maintaining the partition.
  * @example 3 X0 + 2 X1 + X2 - 2 Y0 - Y1 - 3 Y2 could become
- *          2 X1 + 3 X0 + X2 - Y1 - 3 Y2 - 2 Y0
+ *         2 X1 + 3 X0 + X2 - Y1 - 3 Y2 - 2 Y0
  */
 static void shuffleEquation(vector<pair<VarNum, Coeff>>& affinFunc, unsigned nPos) {
   auto rng = std::default_random_engine {};
@@ -157,36 +432,29 @@ static void shuffleEquation(vector<pair<VarNum, Coeff>>& affinFunc, unsigned nPo
   std::shuffle(affinFunc.begin() + nPos, affinFunc.end(), rng);
 }
 
-TEST_FUN(LinearConstraintGreedyNotWorking) {
-  LinearConstraint lc;
-  vector<vector<bool>> partialOrdering;
-  vector<pair<VarNum, Coeff>> affineFunc;
+TEST_FUN(Tricky00) {
   /**
+   * This problems should not be preprocessed
    * poly 0 + 2 * X0 + 2 * X1 + 2 * X2 + 2 * X3 - 2 * Y0 - 3 * Y1 - 1 * Y2 - 2 * Y3
-   * X0 Y0
-   * X0 Y1
-   * X1 Y0
-   * X1 Y1
-   * X2 Y2
-   * X2 Y3
-   * X2 Y1
-   * X3 Y2
-   * X3 Y3
+   *
+   * 2    2      2    2
+   * x0   x1     x2   x3
+   * | \ / |   / | \ / |
+   * |  X  |  /  |  X  |
+   * | / \ | /   | / \ |
+   * y0   y1     y2   y3
+   * 2    3      1    2
    */
-  partialOrdering.clear();
-  partialOrdering.resize(8);
-  for (unsigned i = 0; i < 8; i++) {
-    partialOrdering[i] = vector(8, false);
-  }
-  partialOrdering[0][4] = true;
-  partialOrdering[0][5] = true;
-  partialOrdering[1][4] = true;
-  partialOrdering[1][5] = true;
-  partialOrdering[2][5] = true;
-  partialOrdering[2][6] = true;
-  partialOrdering[2][7] = true;
-  partialOrdering[3][6] = true;
-  partialOrdering[3][7] = true;
+  SETUP(4, 4);
+  partialOrdering[0][0 + 4] = true; // X0 > Y0
+  partialOrdering[0][1 + 4] = true; // X0 > Y1
+  partialOrdering[1][0 + 4] = true; // X1 > Y0
+  partialOrdering[1][1 + 4] = true; // X1 > Y1
+  partialOrdering[2][1 + 4] = true; // X2 > Y1
+  partialOrdering[2][2 + 4] = true; // X2 > Y2
+  partialOrdering[2][3 + 4] = true; // X2 > Y3
+  partialOrdering[3][2 + 4] = true; // X3 > Y2
+  partialOrdering[3][3 + 4] = true; // X3 > Y3
 
   affineFunc.clear();
   affineFunc.push_back(make_pair(0, 2));
@@ -198,25 +466,59 @@ TEST_FUN(LinearConstraintGreedyNotWorking) {
   affineFunc.push_back(make_pair(6, -2));
   affineFunc.push_back(make_pair(7, -1));
 
-  shuffleEquation(affineFunc, 4);
+  for (unsigned i = 0; i < 10; i++) {
+    shuffleEquation(affineFunc, nPos);
+    ASS_EQ(lc.getSign(affineFunc, partialOrdering,  1), Incomparable);
+    ASS_EQ(lc.getSign(affineFunc, partialOrdering,  0), Greater);
+    ASS_EQ(lc.getSign(affineFunc, partialOrdering, -1), Greater);
+  }
+}
 
-  ASS(lc.getSign(affineFunc, partialOrdering, 0) == Greater);
-
+TEST_FUN(Tricky01) {
   /**
-   * poly 0 + 2 * X4 + 2 * X2 + 2 * X5 + 2 * X1 + 2 * X0 + 2 * X3 - 3 * Y1 - 2 * Y4 - 1 * Y5 - 2 * Y3 - 2 * Y0 - 2 * Y2
-   * X0 Y0
-   * X0 Y1
-   * X1 Y0
-   * X1 Y1
-   * X2 Y2
-   * X2 Y3
-   * X2 Y1
-   * X3 Y2
-   * X3 Y3
-   * X4 Y4
-   * X4 Y5
-   * X4 Y3
-   * X5 Y4
-   * X5 Y5
+   * poly 0 + 2 * X4 + 2 * X2 + 2 * X5 + 2 * X1 + 2 * X0 + 2 * X3
+   *  - 2 * Y0 - 3 * Y1 - 2 * Y2 - 2 * Y3 - 2 * Y4 - 1 * Y5
+   * 2    2      2    2
+   * x0   x1     x2   x3     x4   x5
+   * | \ / |   / | \ / |   / | \ / |
+   * |  X  |  /  |  X  |  /  |  X  |
+   * | / \ | /   | / \ | /   | / \ |
+   * y0   y1     y2   y3     y4   y5
+   * 2    3      2    2      1    2
    */
+  SETUP(6, 6);
+  partialOrdering[0][0 + 6] = true; // X0 > Y0
+  partialOrdering[0][1 + 6] = true; // X0 > Y1
+  partialOrdering[1][0 + 6] = true; // X1 > Y0
+  partialOrdering[1][1 + 6] = true; // X1 > Y1
+  partialOrdering[2][1 + 6] = true; // X2 > Y1
+  partialOrdering[2][2 + 6] = true; // X2 > Y2
+  partialOrdering[2][3 + 6] = true; // X2 > Y3
+  partialOrdering[3][2 + 6] = true; // X3 > Y2
+  partialOrdering[3][3 + 6] = true; // X3 > Y3
+  partialOrdering[4][3 + 6] = true; // X4 > Y3
+  partialOrdering[4][4 + 6] = true; // X4 > Y4
+  partialOrdering[4][5 + 6] = true; // X4 > Y5
+  partialOrdering[5][4 + 6] = true; // X5 > Y4
+  partialOrdering[5][5 + 6] = true; // X5 > Y5
+
+
+  affineFunc.push_back(make_pair(0, 2));
+  affineFunc.push_back(make_pair(1, 2));
+  affineFunc.push_back(make_pair(2, 2));
+  affineFunc.push_back(make_pair(3, 2));
+  affineFunc.push_back(make_pair(4, 2));
+  affineFunc.push_back(make_pair(5, 2));
+  affineFunc.push_back(make_pair(0 + 6, -3));
+  affineFunc.push_back(make_pair(1 + 6, -2));
+  affineFunc.push_back(make_pair(2 + 6, -2));
+  affineFunc.push_back(make_pair(3 + 6, -2));
+  affineFunc.push_back(make_pair(4 + 6, -2));
+  affineFunc.push_back(make_pair(5 + 6, -1));
+
+
+  for (unsigned i = 0; i < 10; i++) {
+    shuffleEquation(affineFunc, nPos);
+    ASS_EQ(lc.getSign(affineFunc, partialOrdering, 0), Greater);
+  }
 }

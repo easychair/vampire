@@ -37,6 +37,7 @@ namespace Ordering
       Constant constant;
 
       int sumCoeffs = 0;
+      bool inverted = false;
 
       unsigned allocated_size = 0;
 
@@ -48,8 +49,6 @@ namespace Ordering
 
       // The element greaterThanY[i][j] is true if i is greater than j
       Lib::SparseMatrix<bool> greaterThanY;
-      // The element lessThanX[j][i] is true if i is greater than j
-      Lib::SparseMatrix<bool> smallerThanX;
 
       inline unsigned index(VarAlias x, VarAlias y) { return x * nNegVars + y;}
 
@@ -78,12 +77,12 @@ namespace Ordering
 
       void removeYVariable(VarAlias yAlias);
 
-      bool setProblem(const std::vector<std::pair<VarNum, Coeff>>& affineFunc);
+      void setProblem(const std::vector<std::pair<VarNum, Coeff>>& affineFunc, bool inverted = false);
 
-      bool setOrdering(const std::vector<std::pair<VarNum, Coeff>>& affineFunc,
+      void setOrdering(const std::vector<std::pair<VarNum, Coeff>>& affineFunc,
                        const Kernel::TermPartialOrdering partialOrdering);
 
-      bool setOrdering(const std::vector<std::pair<VarNum, Coeff>>& affineFunc,
+      void setOrdering(const std::vector<std::pair<VarNum, Coeff>>& affineFunc,
                        const std::vector<std::vector<bool>> partialOrdering);
     public:
       LinearConstraint();
