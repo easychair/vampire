@@ -493,7 +493,7 @@ void OrderingComparator::processPolyCase()
 
   // Linear Constraint Reasoner
   static Lib::LinearConstraint _lc;
-  Result res = _lc.getSign(poly->constant,
+  Result res = _lc.getSign(-poly->constant,
                            poly->pos,
                            poly->neg,
                            trace);

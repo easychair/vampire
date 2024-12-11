@@ -68,13 +68,16 @@ void Lib::LinearConstraint::setOrdering(const Stack<std::pair<VarNum, Coeff>>& p
   ASS(inverted || nNegVars == negVars.size());
   ASS(!inverted || nNegVars == posVars.size());
   ASS(!inverted || nPosVars == negVars.size());
+
   for (unsigned i = 0; i < nPosVars; i++) {
     for (unsigned j = 0; j < nNegVars; j++) {
-      auto x = TermList::var(!inverted ? posVars[i].first : negVars[i].first);
-      auto y = TermList::var(!inverted ? negVars[j].first : posVars[j].first);
-      partialOrdering->get(x, y, res);
-      if (res == Kernel::Result::GREATER)
+      VarNum x = !inverted ? posVars[i].first : negVars[i].first;
+      VarNum y = !inverted ? negVars[j].first : posVars[j].first;
+      if (partialOrdering->get(TermList::var(x),
+                               TermList::var(y), res)
+       && res == Kernel::Result::GREATER) {
         greaterThanY.set(j, i, true);
+       }
     }
   }
 }
@@ -87,6 +90,7 @@ void Lib::LinearConstraint::setOrdering(const Stack<std::pair<VarNum, Coeff>>& p
   ASS(inverted || nNegVars == negVars.size());
   ASS(!inverted || nNegVars == posVars.size());
   ASS(!inverted || nPosVars == negVars.size());
+
   for (unsigned i = 0; i < nPosVars; i++) {
     for (unsigned j = 0; j < nNegVars; j++) {
       VarNum x = !inverted ? posVars[i].first : negVars[i].first;
@@ -326,11 +330,9 @@ bool LinearConstraint::search()
 
 Ordering::Result LinearConstraint::solve()
 {
-  cout << to_string() << endl;
   if (!preProcess())
     return Result::INCOMPARABLE;
   if (nNegVars == 0 || search()) {
-    cout << "returns: " << (inverted ? Result::LESS : Result::GREATER) << endl;
     return inverted ? Result::LESS : Result::GREATER;
   }
   return Result::INCOMPARABLE;
@@ -402,7 +404,6 @@ Result Lib::LinearConstraint::getSign(const Constant& c,
                                       const Lib::Stack<std::pair<VarNum, Coeff>>& negVars,
                                       const Kernel::TermPartialOrdering* partialOrdering)
 {
-  cout << ".";
   bool failed = false;
   inverted = false;
   constant = c;
