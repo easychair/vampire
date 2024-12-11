@@ -705,6 +705,12 @@ set(VAMPIRE_SAT_SUBSUMPTION_SOURCES
     )
 source_group(smt_subsumption_source_files FILES ${VAMPIRE_SAT_SUBSUMPTION_SOURCES})
 
+set(VAMPIRE_LINEAR_CONSTRAINTS_SOURCES
+    OrderingConstraints/LinearConstraint.cpp
+    OrderingConstraints/LinearConstraint.hpp
+    OrderingConstraints/SparseMatrix.hpp)
+source_group(linear_constraint_source_files FILES ${VAMPIRE_LINEAR_CONSTRAINTS_SOURCES})
+
 set(VAMPIRE_TESTING_SOURCES
     Test/UnitTesting.cpp
     Test/UnitTesting.hpp
@@ -736,6 +742,7 @@ set(UNIT_TESTS
     UnitTests/tBinaryHeap.cpp
     UnitTests/tSafeRecursion.cpp
     UnitTests/tKBO.cpp
+    UnitTests/tLinearConstraint.cpp
     UnitTests/tSKIKBO.cpp
     UnitTests/tLPO.cpp
     UnitTests/tRatioKeeper.cpp
@@ -782,6 +789,7 @@ set(VAMPIRE_SOURCES
     ${VAMPIRE_MINISAT_SOURCES}
     ${VAMPIRE_CASC_SOURCES}
     ${VAMPIRE_SAT_SUBSUMPTION_SOURCES}
+    ${VAMPIRE_LINEAR_CONSTRAINTS_SOURCES}
     Forwards.hpp
     "${CMAKE_CURRENT_BINARY_DIR}/version.cpp"
     )
