@@ -560,7 +560,7 @@ void OrderingComparator::processVarCase()
 
 const OrderingComparator::Polynomial* OrderingComparator::Polynomial::get(int constant, const Stack<VarCoeffPair>& vcs)
 {
-  static Set<Polynomial*> polys;
+  static Set<Polynomial*, DerefPtrHash<DefaultHash>> polys;
 
   auto pos = iterTraits(Stack<VarCoeffPair>::ConstRefIterator(vcs)).filter([](const auto& vc) {
     return vc.second > 0;
@@ -576,17 +576,15 @@ const OrderingComparator::Polynomial* OrderingComparator::Polynomial::get(int co
     return vc1.first<vc2.first;
   });
 
+  Polynomial poly{ constant, pos, neg };
+  // The code below depends on the fact that the first argument
+  // is only called when poly is not used anymore, otherwise the
+  // move would give undefined behaviour.
   bool unused;
   return polys.rawFindOrInsert(
-    [&](){
-      auto p = new Polynomial();
-      p->constant = constant;
-      p->pos = std::move(pos);
-      p->neg = std::move(neg);
-      return p;
-    },
-    HashUtils::combine(DefaultHash::hash(constant), DefaultHash::hash(pos), DefaultHash::hash(neg)),
-    [&](Polynomial* p) { return p->constant == constant && p->pos == pos && p->neg == neg; },
+    [&](){ return new Polynomial(std::move(poly)); },
+    poly.defaultHash(),
+    [&](Polynomial* p) { return *p == poly; },
     unused);
 }
 

@@ -101,6 +101,11 @@ protected:
   struct Polynomial {
     static const Polynomial* get(int constant, const Stack<VarCoeffPair>& vcs);
 
+    auto asTuple() const { return std::make_tuple(constant, pos, neg); }
+
+    IMPL_HASH_FROM_TUPLE(Polynomial);
+    IMPL_COMPARISONS_FROM_TUPLE(Polynomial);
+
     int constant;
     Stack<VarCoeffPair> pos;
     Stack<VarCoeffPair> neg;
