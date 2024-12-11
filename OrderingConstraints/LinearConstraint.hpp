@@ -5,20 +5,17 @@
 #include "SparseMatrix.hpp"
 #include "Kernel/OrderingComparator.hpp"
 
-namespace Ordering
+namespace Lib
 {
-  using Flow = unsigned;
-  using VarNum = unsigned;
-  using VarAlias = unsigned;
-  using Coeff = int;
-  using Constant = int;
-
-  enum Comparison {
-    Greater, Less, Incomparable, Equal
-  };
-
   class LinearConstraint
   {
+    public:
+    using Flow = unsigned;
+    using VarNum = unsigned;
+    using VarAlias = unsigned;
+    using Coeff = int;
+    using Constant = int;
+
     private:
       /**
        * @brief contains the alias of a variable. If posVars[i] = x, then i is the alias of x in this part of the code.
@@ -71,19 +68,22 @@ namespace Ordering
 
       bool search();
 
-      Comparison solve();
+      Result solve();
 
       void removeXVariable(VarAlias xAlias);
 
       void removeYVariable(VarAlias yAlias);
 
-      void setProblem(const std::vector<std::pair<VarNum, Coeff>>& affineFunc, bool inverted = false);
+      void setProblem(const Stack<std::pair<VarNum, Coeff>>& posVars,
+                      const Stack<std::pair<VarNum, Coeff>>& negVars);
 
-      void setOrdering(const std::vector<std::pair<VarNum, Coeff>>& affineFunc,
-                       const Kernel::TermPartialOrdering partialOrdering);
+      void setOrdering(const Stack<std::pair<VarNum, Coeff>>& posVars,
+                       const Stack<std::pair<VarNum, Coeff>>& negVars,
+                       const Kernel::TermPartialOrdering* partialOrdering);
 
-      void setOrdering(const std::vector<std::pair<VarNum, Coeff>>& affineFunc,
-                       const std::vector<std::vector<bool>> partialOrdering);
+      void setOrdering(const Stack<std::pair<VarNum, Coeff>>& posVars,
+                       const Stack<std::pair<VarNum, Coeff>>& negVars,
+                       const std::vector<std::vector<bool>>& partialOrdering);
     public:
       LinearConstraint();
 
@@ -92,17 +92,19 @@ namespace Ordering
       /**
        * @brief returns a comparison between the affine function and the constant @p c
        */
-      Comparison getSign(const std::vector<std::pair<VarNum, Coeff>>& affineFunc,
-                                   const Kernel::TermPartialOrdering partialOrdering,
-                                   Constant c);
+      Result getSign(const Constant& c,
+                     const Lib::Stack<std::pair<VarNum,Coeff>>& posVars,
+                     const Lib::Stack<std::pair<VarNum,Coeff>>& negVars,
+                     const Kernel::TermPartialOrdering* partialOrdering);
 
       /**
        * @brief returns a comparison between the affine function and the constant @p c
        * @details the points of this method is for unit testing
        */
-      Comparison getSign(const std::vector<std::pair<VarNum, Coeff>>& affineFunc,
-                                   const std::vector<std::vector<bool>> partialOrdering,
-                                   Constant c);
+      Result getSign(const Constant& c,
+                     const Lib::Stack<std::pair<VarNum,Coeff>>& posVars,
+                     const Lib::Stack<std::pair<VarNum,Coeff>>& negVars,
+                     const std::vector<std::vector<bool>> partialOrdering);
 
 
   };

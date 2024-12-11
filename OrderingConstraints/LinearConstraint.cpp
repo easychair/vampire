@@ -2,18 +2,17 @@
 
 #include <algorithm>
 
-using namespace Ordering;
+using namespace Lib;
 using namespace std;
 
 #define LC_LOG_LEVEL 5
 #define LC_LOG
 
-void Ordering::LinearConstraint::reset()
+void LinearConstraint::reset()
 {
   nPosVars = 0;
   nNegVars = 0;
   sumCoeffs = 0;
-  inverted = false;
 
   capacities.clear();
   requirements.clear();
@@ -21,91 +20,84 @@ void Ordering::LinearConstraint::reset()
   flowMatrix.clear();
   greaterThanY.clear();
 }
-void LinearConstraint::setProblem(const vector<pair<VarNum, Coeff>>& affineFunc, bool invert)
+
+void Lib::LinearConstraint::setProblem(const Stack<std::pair<VarNum, Coeff>>& posVars,
+                                       const Stack<std::pair<VarNum, Coeff>>& negVars)
 {
   // In the affine function, the coefficients are partitioned into positive and negative ones
   reset();
 
-  unsigned i = 0;
-  int coeff;
-  while (i < affineFunc.size() && (coeff = affineFunc[i].second) > 0) {
-    sumCoeffs += coeff;
-    capacities.push_back(coeff);
-    i++;
+  for (pair<VarNum, Coeff> var : posVars) {
+    Coeff coeff = var.second;
+    ASS_NEQ(coeff, 0);
+    ASS( inverted || (coeff > 0));
+    ASS(!inverted || (coeff < 0));
+    Flow capa = abs(coeff);
+    capacities.push_back(capa);
+    sumCoeffs += capa;
   }
-  nPosVars = i;
-  while (i < affineFunc.size()) {
-    coeff = affineFunc[i].second;
-    sumCoeffs += coeff;
-    ASS(coeff < 0);
-    requirements.push_back(-coeff);
-    i++;
-  }
-  nNegVars = i - nPosVars;
 
-  // If the sum of coefficients is negative, flip the requirements and the capacities
-  if (sumCoeffs < 0 || invert) {
+  for (pair<VarNum, Coeff> var : negVars) {
+    Coeff coeff = var.second;
+    ASS_NEQ(coeff, 0);
+    ASS( inverted || (coeff < 0));
+    ASS(!inverted || (coeff > 0));
+    Flow req = abs(coeff);
+    requirements.push_back(req);
+    sumCoeffs -= req;
+  }
+
+  if (sumCoeffs < 0) {
     ASS(!inverted);
     inverted = true;
     swap(capacities, requirements);
-    swap(nPosVars, nNegVars);
   }
 
+  nPosVars = capacities.size();
+  nNegVars = requirements.size();
   greaterThanY.reshape(nNegVars, nPosVars);
   flowMatrix.reshape(nPosVars, nNegVars);
 }
 
-void Ordering::LinearConstraint::setOrdering(const std::vector<std::pair<VarNum, Coeff>>& affineFunc,
-                                             const Kernel::TermPartialOrdering partialOrdering)
+void Lib::LinearConstraint::setOrdering(const Stack<std::pair<VarNum, Coeff>>& posVars,
+                                        const Stack<std::pair<VarNum, Coeff>>& negVars,
+                                        const Kernel::TermPartialOrdering* partialOrdering)
 {
   Result res;
-  unsigned xStart = 0;
-  unsigned xEnd   = nPosVars;
-  unsigned yStart = nPosVars;
-  unsigned yEnd   = nPosVars + nNegVars;
-  if (inverted) {
-    xStart = nNegVars;
-    xEnd   = nPosVars + nNegVars;
-    yStart = 0;
-    yEnd   = nNegVars;
-  }
-
-  for (VarAlias xIndex = xStart; xIndex < xEnd; xIndex++) {
-    for (VarAlias yIndex = yStart; yIndex < yEnd; yIndex++) {
-      auto x = TermList::var(affineFunc[xIndex].first);
-      auto y = TermList::var(affineFunc[yIndex].first);
-      partialOrdering.get(x, y, res);
+  ASS(inverted || nPosVars == posVars.size());
+  ASS(inverted || nNegVars == negVars.size());
+  ASS(!inverted || nNegVars == posVars.size());
+  ASS(!inverted || nPosVars == negVars.size());
+  for (unsigned i = 0; i < nPosVars; i++) {
+    for (unsigned j = 0; j < nNegVars; j++) {
+      auto x = TermList::var(!inverted ? posVars[i].first : negVars[i].first);
+      auto y = TermList::var(!inverted ? negVars[j].first : posVars[j].first);
+      partialOrdering->get(x, y, res);
       if (res == Kernel::Result::GREATER)
-        greaterThanY.set(yIndex - nPosVars, xIndex, true);
+        greaterThanY.set(j, i, true);
     }
   }
 }
 
-void Ordering::LinearConstraint::setOrdering(const std::vector<std::pair<VarNum, Coeff>>& affineFunc,
-                                             const std::vector<std::vector<bool>> partialOrdering)
+void Lib::LinearConstraint::setOrdering(const Stack<std::pair<VarNum, Coeff>>& posVars,
+                                        const Stack<std::pair<VarNum, Coeff>>& negVars,
+                                        const std::vector<std::vector<bool>>& partialOrdering)
 {
-  unsigned xStart = 0;
-  unsigned xEnd   = nPosVars;
-  unsigned yStart = nPosVars;
-  unsigned yEnd   = nPosVars + nNegVars;
-  if (inverted) {
-    xStart = nNegVars;
-    xEnd   = nPosVars + nNegVars;
-    yStart = 0;
-    yEnd   = nNegVars;
-  }
-
-  for (VarAlias xIndex = xStart; xIndex < xEnd; xIndex++) {
-    for (VarAlias yIndex = yStart; yIndex < yEnd; yIndex++) {
-      VarNum x = affineFunc[xIndex].first;
-      VarNum y = affineFunc[yIndex].first;
+  ASS(inverted || nPosVars == posVars.size());
+  ASS(inverted || nNegVars == negVars.size());
+  ASS(!inverted || nNegVars == posVars.size());
+  ASS(!inverted || nPosVars == negVars.size());
+  for (unsigned i = 0; i < nPosVars; i++) {
+    for (unsigned j = 0; j < nNegVars; j++) {
+      VarNum x = !inverted ? posVars[i].first : negVars[i].first;
+      VarNum y = !inverted ? negVars[j].first : posVars[j].first;
       if (partialOrdering[x][y])
-        greaterThanY.set(yIndex - yStart, xIndex - xStart, true);
+        greaterThanY.set(j, i, true);
     }
   }
 }
 
-bool Ordering::LinearConstraint::pruneLevel0()
+bool LinearConstraint::pruneLevel0()
 {
   if (!inverted && constant > sumCoeffs)
     return true;
@@ -114,7 +106,7 @@ bool Ordering::LinearConstraint::pruneLevel0()
   return false;
 }
 
-bool Ordering::LinearConstraint::pruneLevel1()
+bool LinearConstraint::pruneLevel1()
 {
   // if a variable y does not have any x that can simplify it, then prune
   for (VarAlias yAlias=0; yAlias < nNegVars; yAlias++)
@@ -123,21 +115,21 @@ bool Ordering::LinearConstraint::pruneLevel1()
   return false;
 }
 
-bool Ordering::LinearConstraint::preProcess()
+bool LinearConstraint::preProcess()
 {
   bool progress = true;
   while (progress) {
     progress = false;
     for (VarAlias yAlias=0; yAlias < requirements.size(); yAlias++) {
       // if no variable x is greater than y, then nothing can be concluded
-      vector<pair<unsigned, bool>> greaterXs = greaterThanY.getSetOnRow(yAlias);
-      if (greaterXs.size() == 0)
+      vector<pair<unsigned, bool>> xs = greaterThanY.getSetOnRow(yAlias);
+      if (xs.size() == 0)
         return false;
       // if there is only one variable x greater than y, transfer the flow to y
-      if (greaterXs.size() > 1)
+      if (xs.size() > 1)
         continue;
 
-      VarAlias xAlias = greaterXs[0].first;
+      VarAlias xAlias = xs[0].first;
       ASS_L(xAlias, nPosVars);
       if (capacities[xAlias] < requirements[yAlias])
         return false;
@@ -182,7 +174,7 @@ bool Ordering::LinearConstraint::preProcess()
   return true;
 }
 
-bool Ordering::LinearConstraint::dfsX(VarAlias x, std::vector<VarAlias> &path)
+bool LinearConstraint::dfsX(VarAlias x, std::vector<VarAlias> &path)
 {
   seenX[x] = true;
   auto transfers = flowMatrix.getSetOnRow(x);
@@ -206,14 +198,14 @@ bool Ordering::LinearConstraint::dfsX(VarAlias x, std::vector<VarAlias> &path)
   return false;
 }
 
-bool Ordering::LinearConstraint::dfsY(VarAlias y, std::vector<VarAlias> &path)
+bool LinearConstraint::dfsY(VarAlias y, std::vector<VarAlias> &path)
 {
   seenY[y] = true;
-  auto greaterXs = greaterThanY.getSetOnRow(y);
-  if (greaterXs.size() == 0) {
+  auto xs = greaterThanY.getSetOnRow(y);
+  if (xs.size() == 0) {
     return false;
   }
-  for (auto p : greaterXs) {
+  for (auto p : xs) {
     VarAlias x = p.first;
     if (!seenX[x] && dfsX(x, path)) {
       path.push_back(y);
@@ -223,7 +215,7 @@ bool Ordering::LinearConstraint::dfsY(VarAlias y, std::vector<VarAlias> &path)
   return false;
 }
 
-Flow Ordering::LinearConstraint::findPath(VarAlias sink, std::vector<VarAlias> &path)
+LinearConstraint::Flow LinearConstraint::findPath(VarAlias sink, std::vector<VarAlias> &path)
 {
   seenX.clear();
   seenX.resize(nPosVars, false);
@@ -244,18 +236,18 @@ Flow Ordering::LinearConstraint::findPath(VarAlias sink, std::vector<VarAlias> &
   return bottleneck;
 }
 
-bool Ordering::LinearConstraint::search()
+bool LinearConstraint::search()
 {
   // Uses the maximum flow problem to find maches between the ys and the xs
-  // TODO here find heuristic to bette choose the order of ys
+  // TODO here find heuristic to better choose the order of ys
   for (VarAlias y = 0; y < nNegVars; y++) {
     // requirement left for y
-    auto greaterXs = greaterThanY.getSetOnRow(y);
-    ASS(greaterXs.size() > 1);
+    auto xs = greaterThanY.getSetOnRow(y);
+    ASS(xs.size() > 1);
 
     // first try to find some x with non zero capacity
-    // TODO here find heuristic to bette choose the order of xs
-    for (auto p : greaterXs) {
+    // TODO here find heuristic to better choose the order of xs
+    for (auto p : xs) {
       Flow b = requirements[y];
       ASS(b > 0);
       VarAlias x = p.first;
@@ -332,16 +324,16 @@ bool Ordering::LinearConstraint::search()
   return true;
 }
 
-Ordering::Comparison Ordering::LinearConstraint::solve()
+Ordering::Result LinearConstraint::solve()
 {
   if (!preProcess())
-    return Comparison::Incomparable;
-  if (search())
-    return inverted ? Comparison::Less : Comparison::Greater;
-  return Comparison::Incomparable;
+    return Result::INCOMPARABLE;
+  if (nNegVars == 0 || search())
+    return inverted ? Result::LESS : Result::GREATER;
+  return Result::INCOMPARABLE;
 }
 
-void Ordering::LinearConstraint::removeXVariable(VarAlias xAlias)
+void LinearConstraint::removeXVariable(VarAlias xAlias)
 {
   ASS_L(xAlias, nPosVars);
   capacities[xAlias] = capacities.back();
@@ -353,7 +345,7 @@ void Ordering::LinearConstraint::removeXVariable(VarAlias xAlias)
   nPosVars--;
 }
 
-void Ordering::LinearConstraint::removeYVariable(VarAlias yAlias)
+void LinearConstraint::removeYVariable(VarAlias yAlias)
 {
   ASS_L(yAlias, nNegVars);
   requirements[yAlias] = requirements.back();
@@ -371,7 +363,7 @@ LinearConstraint::LinearConstraint() :
 {
 }
 
-std::string Ordering::LinearConstraint::to_string() const
+std::string LinearConstraint::to_string() const
 {
   string s = "LinearConstraint\n";
   s += "nPosVars: ";
@@ -401,45 +393,101 @@ std::string Ordering::LinearConstraint::to_string() const
   return s;
 }
 
-Ordering::Comparison LinearConstraint::getSign(const vector<pair<VarNum, Coeff>>& affineFunc,
-                                               const TermPartialOrdering partialOrdering,
-                                               Constant c)
-{
-  ASS(false);
-  return Incomparable;
-}
 
-Ordering::Comparison LinearConstraint::getSign(const vector<pair<VarNum, Coeff>>& affineFunc,
-                                               const vector<vector<bool>> partialOrdering,
-                                               Constant c)
+Result Lib::LinearConstraint::getSign(const Constant& c,
+                                      const Lib::Stack<std::pair<VarNum, Coeff>>& posVars,
+                                      const Lib::Stack<std::pair<VarNum, Coeff>>& negVars,
+                                      const Kernel::TermPartialOrdering* partialOrdering)
 {
   bool failed = false;
+  inverted = false;
   constant = c;
 
-  setProblem(affineFunc);
+  setProblem(posVars, negVars);
+
+  if (nPosVars == 0 && nNegVars == 0) {
+    if (constant == 0)
+      return Result::EQUAL;
+    if (constant > 0)
+      return Result::LESS;
+    return Result::GREATER;
+  }
+
   if (pruneLevel0())
     failed = true;
   else {
-    setOrdering(affineFunc, partialOrdering);
+    setOrdering(posVars, negVars, partialOrdering);
     if (pruneLevel1())
       failed = true;
   }
-  Ordering::Comparison result = Comparison::Incomparable;
+
+  Result result = Result::INCOMPARABLE;
   if (!failed)
     result = solve();
 
-  if (result != Comparison::Incomparable)
+  if (result != Result::INCOMPARABLE)
     return result;
 
   // if we failed, we might need to try to solve the reverse problem if the sum of coefficients is zero
   if (sumCoeffs != 0)
-    return Comparison::Incomparable;
+    return Result::INCOMPARABLE;
 
-  setProblem(affineFunc, true);
+  ASS(!inverted);
+  inverted = true;
+  setProblem(negVars, posVars);
   if (pruneLevel0())
-    return Comparison::Incomparable;
-  setOrdering(affineFunc, partialOrdering);
+    return Result::INCOMPARABLE;
+  setOrdering(posVars, negVars, partialOrdering);
   if (pruneLevel1())
-    return Comparison::Incomparable;
+    return Result::INCOMPARABLE;
+  return solve();
+}
+
+Result Lib::LinearConstraint::getSign(const Constant& c,
+                                      const Lib::Stack<std::pair<VarNum, Coeff>>& posVars,
+                                      const Lib::Stack<std::pair<VarNum, Coeff>>& negVars,
+                                      const std::vector<std::vector<bool>> partialOrdering)
+{
+  bool failed = false;
+  inverted = false;
+  constant = c;
+
+  setProblem(posVars, negVars);
+
+  if (nPosVars == 0 && nNegVars == 0) {
+    if (constant == 0)
+      return Result::EQUAL;
+    if (constant > 0)
+      return Result::LESS;
+    return Result::GREATER;
+  }
+
+  if (pruneLevel0())
+    failed = true;
+  else {
+    setOrdering(posVars, negVars, partialOrdering);
+    if (pruneLevel1())
+      failed = true;
+  }
+
+  Result result = Result::INCOMPARABLE;
+  if (!failed)
+    result = solve();
+
+  if (result != Result::INCOMPARABLE)
+    return result;
+
+  // if we failed, we might need to try to solve the reverse problem if the sum of coefficients is zero
+  if (sumCoeffs != 0)
+    return Result::INCOMPARABLE;
+
+  ASS(!inverted);
+  inverted = true;
+  setProblem(negVars, posVars);
+  if (pruneLevel0())
+    return Result::INCOMPARABLE;
+  setOrdering(posVars, negVars, partialOrdering);
+  if (pruneLevel1())
+    return Result::INCOMPARABLE;
   return solve();
 }

@@ -21,7 +21,11 @@
 using namespace std;
 using namespace Lib;
 using namespace Test;
-using namespace Ordering;
+
+using VarNum   = LinearConstraint::VarNum;
+using Coeff    = LinearConstraint::Coeff;
+using Flow     = LinearConstraint::Flow;
+using VarAlias = LinearConstraint::VarAlias;
 
 TEST_FUN(MatrixRetrieval01) {
   SparseMatrix<int> matrix(3, 3, -1);
@@ -147,13 +151,25 @@ TEST_FUN(MatrixCheckSetGetOptimization01) {
 #define SETUP(nPosVars, nNegVars)             \
 LinearConstraint lc;                          \
 vector<vector<bool>> partialOrdering;         \
-vector<pair<VarNum, Coeff>> affineFunc;       \
+Stack<pair<VarNum, Coeff>> posVars;          \
+Stack<pair<VarNum, Coeff>> negVars;          \
 unsigned nPos = nPosVars;                     \
 unsigned nNeg = nNegVars;                     \
 unsigned total = nPos + nNeg;                 \
 partialOrdering.resize(total);                \
 for (unsigned i = 0; i < total; i++) {        \
   partialOrdering[i] = vector(total, false);  \
+}
+
+TEST_FUN(Trivial00) {
+  /**
+   * c >? 0
+   */
+  SETUP(0, 0);
+
+  ASS_EQ(lc.getSign( 1, posVars, negVars, partialOrdering), Result::LESS);
+  ASS_EQ(lc.getSign( 0, posVars, negVars, partialOrdering), Result::EQUAL);
+  ASS_EQ(lc.getSign(-1, posVars, negVars, partialOrdering), Result::GREATER);
 }
 
 TEST_FUN(Trivial01) {
@@ -164,12 +180,12 @@ TEST_FUN(Trivial01) {
   SETUP(1, 1);
   partialOrdering[0][1] = true;
 
-  affineFunc.push_back(make_pair(0, 1));
-  affineFunc.push_back(make_pair(1, -1));
+  posVars.push(make_pair(0, 1));
+  negVars.push(make_pair(1, -1));
 
-  ASS_EQ(lc.getSign(affineFunc, partialOrdering,  1), Incomparable);
-  ASS_EQ(lc.getSign(affineFunc, partialOrdering,  0), Greater);
-  ASS_EQ(lc.getSign(affineFunc, partialOrdering, -1), Greater);
+  ASS_EQ(lc.getSign( 1, posVars, negVars, partialOrdering), Result::INCOMPARABLE);
+  ASS_EQ(lc.getSign( 0, posVars, negVars, partialOrdering), Result::GREATER);
+  ASS_EQ(lc.getSign(-1, posVars, negVars, partialOrdering), Result::GREATER);
 }
 
 TEST_FUN(Trivial02) {
@@ -180,12 +196,12 @@ TEST_FUN(Trivial02) {
   SETUP(1, 1);
   partialOrdering[1][0] = true;
 
-  affineFunc.push_back(make_pair(0, 1));
-  affineFunc.push_back(make_pair(1, -1));
+  posVars.push(make_pair(0, 1));
+  negVars.push(make_pair(1, -1));
 
-  ASS_EQ(lc.getSign(affineFunc, partialOrdering,  1), Less);
-  ASS_EQ(lc.getSign(affineFunc, partialOrdering,  0), Less);
-  ASS_EQ(lc.getSign(affineFunc, partialOrdering, -1), Incomparable);
+  ASS_EQ(lc.getSign( 1, posVars, negVars, partialOrdering), Result::LESS);
+  ASS_EQ(lc.getSign( 0, posVars, negVars, partialOrdering), Result::LESS);
+  ASS_EQ(lc.getSign(-1, posVars, negVars, partialOrdering), Result::INCOMPARABLE);
 }
 
 TEST_FUN(Trivial03) {
@@ -196,31 +212,29 @@ TEST_FUN(Trivial03) {
   SETUP(1, 1);
   partialOrdering[0][1] = true;
 
-  affineFunc.push_back(make_pair(0, 2));
-  affineFunc.push_back(make_pair(1, -1));
+  posVars.push(make_pair(0, 2));
+  negVars.push(make_pair(1, -1));
 
-  ASS_EQ(lc.getSign(affineFunc, partialOrdering, -1), Greater);
-  ASS_EQ(lc.getSign(affineFunc, partialOrdering, 0), Greater);
-  ASS_EQ(lc.getSign(affineFunc, partialOrdering, 1), Greater);
-  ASS_EQ(lc.getSign(affineFunc, partialOrdering, 2), Incomparable);
+  ASS_EQ(lc.getSign( 2, posVars, negVars, partialOrdering), Result::INCOMPARABLE);
+  ASS_EQ(lc.getSign( 1, posVars, negVars, partialOrdering), Result::GREATER);
+  ASS_EQ(lc.getSign( 0, posVars, negVars, partialOrdering), Result::GREATER);
+  ASS_EQ(lc.getSign(-1 , posVars, negVars, partialOrdering), Result::GREATER);
 }
 
 TEST_FUN(Trivial04) {
   /**
    * c + X0 + X1 >? 0
    */
-  SETUP(1, 1);
-  partialOrdering[1][0] = true;
+  SETUP(2, 0);
 
+  posVars.push(make_pair(0, 1));
+  posVars.push(make_pair(1, 1));
 
-  affineFunc.push_back(make_pair(0, 1));
-  affineFunc.push_back(make_pair(1, 1));
-
-  ASS_EQ(lc.getSign(affineFunc, partialOrdering, -1), Greater);
-  ASS_EQ(lc.getSign(affineFunc, partialOrdering, 0), Greater);
-  ASS_EQ(lc.getSign(affineFunc, partialOrdering, 1), Greater);
-  ASS_EQ(lc.getSign(affineFunc, partialOrdering, 2), Greater);
-  ASS_EQ(lc.getSign(affineFunc, partialOrdering, 3), Incomparable);
+  ASS_EQ(lc.getSign( 3, posVars, negVars, partialOrdering), Result::INCOMPARABLE);
+  ASS_EQ(lc.getSign( 2, posVars, negVars, partialOrdering), Result::GREATER);
+  ASS_EQ(lc.getSign( 1, posVars, negVars, partialOrdering), Result::GREATER);
+  ASS_EQ(lc.getSign( 0, posVars, negVars, partialOrdering), Result::GREATER);
+  ASS_EQ(lc.getSign(-1, posVars, negVars, partialOrdering), Result::GREATER);
 }
 
 TEST_FUN(Trivial05) {
@@ -228,17 +242,15 @@ TEST_FUN(Trivial05) {
    * c - X0 - X1 >? 0
    */
   SETUP(1, 1);
-  partialOrdering[1][0] = true;
 
+  negVars.push(make_pair(0, -1));
+  negVars.push(make_pair(1, -1));
 
-  affineFunc.push_back(make_pair(0, -1));
-  affineFunc.push_back(make_pair(1, -1));
-
-  ASS_EQ(lc.getSign(affineFunc, partialOrdering, -3), Incomparable);
-  ASS_EQ(lc.getSign(affineFunc, partialOrdering, -2), Less);
-  ASS_EQ(lc.getSign(affineFunc, partialOrdering, -1), Less);
-  ASS_EQ(lc.getSign(affineFunc, partialOrdering, 0), Less);
-  ASS_EQ(lc.getSign(affineFunc, partialOrdering, 1), Less);
+  ASS_EQ(lc.getSign( 1, posVars, negVars, partialOrdering), Result::LESS);
+  ASS_EQ(lc.getSign( 0, posVars, negVars, partialOrdering), Result::LESS);
+  ASS_EQ(lc.getSign(-1, posVars, negVars, partialOrdering), Result::LESS);
+  ASS_EQ(lc.getSign(-2, posVars, negVars, partialOrdering), Result::LESS);
+  ASS_EQ(lc.getSign(-3, posVars, negVars, partialOrdering), Result::INCOMPARABLE);
 }
 
 TEST_FUN(Imbalanced00) {
@@ -251,13 +263,13 @@ TEST_FUN(Imbalanced00) {
   partialOrdering[0][2] = true;
   partialOrdering[1][2] = true;
 
-  affineFunc.push_back(make_pair(0, 1));
-  affineFunc.push_back(make_pair(1, 1));
-  affineFunc.push_back(make_pair(2, -2));
+  posVars.push(make_pair(0, 1));
+  posVars.push(make_pair(1, 1));
+  negVars.push(make_pair(2, -2));
 
-  ASS_EQ(lc.getSign(affineFunc, partialOrdering, 1), Incomparable);
-  ASS_EQ(lc.getSign(affineFunc, partialOrdering, 0), Greater);
-  ASS_EQ(lc.getSign(affineFunc, partialOrdering, -1), Greater);
+  ASS_EQ(lc.getSign( 1, posVars, negVars, partialOrdering), Result::INCOMPARABLE);
+  ASS_EQ(lc.getSign( 0, posVars, negVars, partialOrdering), Result::GREATER);
+  ASS_EQ(lc.getSign(-1, posVars, negVars, partialOrdering), Result::GREATER);
 }
 
 TEST_FUN(Imbalanced01) {
@@ -270,13 +282,13 @@ TEST_FUN(Imbalanced01) {
   partialOrdering[2][0] = true;
   partialOrdering[2][1] = true;
 
-  affineFunc.push_back(make_pair(0, 1));
-  affineFunc.push_back(make_pair(1, 1));
-  affineFunc.push_back(make_pair(2, -2));
+  posVars.push(make_pair(0, 1));
+  posVars.push(make_pair(1, 1));
+  negVars.push(make_pair(2, -2));
 
-  ASS_EQ(lc.getSign(affineFunc, partialOrdering, 1), Less);
-  ASS_EQ(lc.getSign(affineFunc, partialOrdering, 0), Less);
-  ASS_EQ(lc.getSign(affineFunc, partialOrdering, -1), Incomparable);
+  ASS_EQ(lc.getSign( 1, posVars, negVars, partialOrdering), Result::LESS);
+  ASS_EQ(lc.getSign( 0, posVars, negVars, partialOrdering), Result::LESS);
+  ASS_EQ(lc.getSign(-1, posVars, negVars, partialOrdering), Result::INCOMPARABLE);
 }
 
 TEST_FUN(Imbalanced02) {
@@ -289,13 +301,13 @@ TEST_FUN(Imbalanced02) {
   partialOrdering[0][1] = true;
   partialOrdering[0][2] = true;
 
-  affineFunc.push_back(make_pair(0, 2));
-  affineFunc.push_back(make_pair(1, -1));
-  affineFunc.push_back(make_pair(2, -1));
+  posVars.push(make_pair(0, 2));
+  negVars.push(make_pair(1, -1));
+  negVars.push(make_pair(2, -1));
 
-  ASS_EQ(lc.getSign(affineFunc, partialOrdering, 1), Incomparable);
-  ASS_EQ(lc.getSign(affineFunc, partialOrdering, 0), Greater);
-  ASS_EQ(lc.getSign(affineFunc, partialOrdering, -1), Greater);
+  ASS_EQ(lc.getSign( 1, posVars, negVars, partialOrdering), Result::INCOMPARABLE);
+  ASS_EQ(lc.getSign( 0, posVars, negVars, partialOrdering), Result::GREATER);
+  ASS_EQ(lc.getSign(-1, posVars, negVars, partialOrdering), Result::GREATER);
 }
 
 TEST_FUN(Imbalanced03) {
@@ -308,13 +320,13 @@ TEST_FUN(Imbalanced03) {
   partialOrdering[1][0] = true;
   partialOrdering[2][0] = true;
 
-  affineFunc.push_back(make_pair(0, 2));
-  affineFunc.push_back(make_pair(1, -1));
-  affineFunc.push_back(make_pair(2, -1));
+  posVars.push(make_pair(0, 2));
+  negVars.push(make_pair(1, -1));
+  negVars.push(make_pair(2, -1));
 
-  ASS_EQ(lc.getSign(affineFunc, partialOrdering, 1), Less);
-  ASS_EQ(lc.getSign(affineFunc, partialOrdering, 0), Less);
-  ASS_EQ(lc.getSign(affineFunc, partialOrdering, -1), Incomparable);
+  ASS_EQ(lc.getSign( 1, posVars, negVars, partialOrdering), Result::LESS);
+  ASS_EQ(lc.getSign( 0, posVars, negVars, partialOrdering), Result::LESS);
+  ASS_EQ(lc.getSign(-1, posVars, negVars, partialOrdering), Result::INCOMPARABLE);
 }
 
 TEST_FUN(Imbalanced04) {
@@ -328,14 +340,14 @@ TEST_FUN(Imbalanced04) {
   partialOrdering[2][0] = true;
 
 
-  affineFunc.push_back(make_pair(0, 1));
-  affineFunc.push_back(make_pair(1, -1));
-  affineFunc.push_back(make_pair(2, -1));
+  posVars.push(make_pair(0, 1));
+  negVars.push(make_pair(1, -1));
+  negVars.push(make_pair(2, -1));
 
-  ASS_EQ(lc.getSign(affineFunc, partialOrdering, 1), Less);
-  ASS_EQ(lc.getSign(affineFunc, partialOrdering, 0), Less);
-  ASS_EQ(lc.getSign(affineFunc, partialOrdering, -1), Less);
-  ASS_EQ(lc.getSign(affineFunc, partialOrdering, -2), Incomparable);
+  ASS_EQ(lc.getSign( 1, posVars, negVars, partialOrdering), Result::LESS);
+  ASS_EQ(lc.getSign( 0, posVars, negVars, partialOrdering), Result::LESS);
+  ASS_EQ(lc.getSign(-1, posVars, negVars, partialOrdering), Result::LESS);
+  ASS_EQ(lc.getSign(-2, posVars, negVars, partialOrdering), Result::INCOMPARABLE);
 }
 
 TEST_FUN(Imbalanced05) {
@@ -347,14 +359,14 @@ TEST_FUN(Imbalanced05) {
   partialOrdering[0][2] = true;
 
 
-  affineFunc.push_back(make_pair(0, 1));
-  affineFunc.push_back(make_pair(1, 1));
-  affineFunc.push_back(make_pair(2, -1));
+  posVars.push(make_pair(0, 1));
+  posVars.push(make_pair(1, 1));
+  negVars.push(make_pair(2, -1));
 
-  ASS_EQ(lc.getSign(affineFunc, partialOrdering, 2), Incomparable);
-  ASS_EQ(lc.getSign(affineFunc, partialOrdering, 1), Greater);
-  ASS_EQ(lc.getSign(affineFunc, partialOrdering, 0), Greater);
-  ASS_EQ(lc.getSign(affineFunc, partialOrdering, -1), Greater);
+  ASS_EQ(lc.getSign( 2, posVars, negVars, partialOrdering), Result::INCOMPARABLE);
+  ASS_EQ(lc.getSign( 1, posVars, negVars, partialOrdering), Result::GREATER);
+  ASS_EQ(lc.getSign( 0, posVars, negVars, partialOrdering), Result::GREATER);
+  ASS_EQ(lc.getSign(-1, posVars, negVars, partialOrdering), Result::GREATER);
 }
 
 TEST_FUN(Real00) {
@@ -372,12 +384,14 @@ TEST_FUN(Real00) {
   partialOrdering[1][2] = true;
   partialOrdering[1][3] = true;
 
-  affineFunc.push_back(make_pair(0, 2));
-  affineFunc.push_back(make_pair(1, 2));
-  affineFunc.push_back(make_pair(2, -3));
-  affineFunc.push_back(make_pair(3, -1));
+  posVars.push(make_pair(0, 2));
+  posVars.push(make_pair(1, 2));
+  negVars.push(make_pair(2, -3));
+  negVars.push(make_pair(3, -1));
 
-  ASS_EQ(lc.getSign(affineFunc, partialOrdering, 0), Greater);
+  ASS_EQ(lc.getSign( 1, posVars, negVars, partialOrdering), Result::INCOMPARABLE);
+  ASS_EQ(lc.getSign( 0, posVars, negVars, partialOrdering), Result::GREATER);
+  ASS_EQ(lc.getSign(-1, posVars, negVars, partialOrdering), Result::GREATER);
 }
 
 TEST_FUN(Symmetric00) {
@@ -390,14 +404,14 @@ TEST_FUN(Symmetric00) {
   partialOrdering[0][2] = true;
   partialOrdering[1][3] = true;
 
-  affineFunc.push_back(make_pair(0, 1));
-  affineFunc.push_back(make_pair(1, 1));
-  affineFunc.push_back(make_pair(2, -1));
-  affineFunc.push_back(make_pair(3, -1));
+  posVars.push(make_pair(0, 1));
+  posVars.push(make_pair(1, 1));
+  negVars.push(make_pair(2, -1));
+  negVars.push(make_pair(3, -1));
 
-  ASS_EQ(lc.getSign(affineFunc, partialOrdering, 1), Incomparable);
-  ASS_EQ(lc.getSign(affineFunc, partialOrdering, 0), Greater);
-  ASS_EQ(lc.getSign(affineFunc, partialOrdering, -1), Greater);
+  ASS_EQ(lc.getSign( 1, posVars, negVars, partialOrdering), Result::INCOMPARABLE);
+  ASS_EQ(lc.getSign( 0, posVars, negVars, partialOrdering), Result::GREATER);
+  ASS_EQ(lc.getSign(-1, posVars, negVars, partialOrdering), Result::GREATER);
 }
 
 TEST_FUN(Symmetric01) {
@@ -410,26 +424,14 @@ TEST_FUN(Symmetric01) {
   partialOrdering[2][0] = true;
   partialOrdering[3][1] = true;
 
-  affineFunc.push_back(make_pair(0, 1));
-  affineFunc.push_back(make_pair(1, 1));
-  affineFunc.push_back(make_pair(2, -1));
-  affineFunc.push_back(make_pair(3, -1));
+  posVars.push(make_pair(0, 1));
+  posVars.push(make_pair(1, 1));
+  negVars.push(make_pair(2, -1));
+  negVars.push(make_pair(3, -1));
 
-  ASS_EQ(lc.getSign(affineFunc, partialOrdering, 1), Less);
-  ASS_EQ(lc.getSign(affineFunc, partialOrdering, 0), Less);
-  ASS_EQ(lc.getSign(affineFunc, partialOrdering, -1), Incomparable);
-}
-
-
-/**
- * @brief Shuffles the positive variables and the negative variables while maintaining the partition.
- * @example 3 X0 + 2 X1 + X2 - 2 Y0 - Y1 - 3 Y2 could become
- *         2 X1 + 3 X0 + X2 - Y1 - 3 Y2 - 2 Y0
- */
-static void shuffleEquation(vector<pair<VarNum, Coeff>>& affinFunc, unsigned nPos) {
-  auto rng = std::default_random_engine {};
-  std::shuffle(affinFunc.begin(), affinFunc.begin() + nPos, rng);
-  std::shuffle(affinFunc.begin() + nPos, affinFunc.end(), rng);
+  ASS_EQ(lc.getSign( 1, posVars, negVars, partialOrdering), Result::LESS);
+  ASS_EQ(lc.getSign( 0, posVars, negVars, partialOrdering), Result::LESS);
+  ASS_EQ(lc.getSign(-1, posVars, negVars, partialOrdering), Result::INCOMPARABLE);
 }
 
 TEST_FUN(Tricky00) {
@@ -456,22 +458,18 @@ TEST_FUN(Tricky00) {
   partialOrdering[3][2 + 4] = true; // X3 > Y2
   partialOrdering[3][3 + 4] = true; // X3 > Y3
 
-  affineFunc.clear();
-  affineFunc.push_back(make_pair(0, 2));
-  affineFunc.push_back(make_pair(1, 2));
-  affineFunc.push_back(make_pair(2, 2));
-  affineFunc.push_back(make_pair(3, 2));
-  affineFunc.push_back(make_pair(4, -2));
-  affineFunc.push_back(make_pair(5, -3));
-  affineFunc.push_back(make_pair(6, -2));
-  affineFunc.push_back(make_pair(7, -1));
+  posVars.push(make_pair(0, 2));
+  posVars.push(make_pair(1, 2));
+  posVars.push(make_pair(2, 2));
+  posVars.push(make_pair(3, 2));
+  negVars.push(make_pair(4, -2));
+  negVars.push(make_pair(5, -3));
+  negVars.push(make_pair(6, -2));
+  negVars.push(make_pair(7, -1));
 
-  for (unsigned i = 0; i < 10; i++) {
-    shuffleEquation(affineFunc, nPos);
-    ASS_EQ(lc.getSign(affineFunc, partialOrdering,  1), Incomparable);
-    ASS_EQ(lc.getSign(affineFunc, partialOrdering,  0), Greater);
-    ASS_EQ(lc.getSign(affineFunc, partialOrdering, -1), Greater);
-  }
+  ASS_EQ(lc.getSign( 1, posVars, negVars, partialOrdering), Result::INCOMPARABLE);
+  ASS_EQ(lc.getSign( 0, posVars, negVars, partialOrdering), Result::GREATER);
+  ASS_EQ(lc.getSign(-1, posVars, negVars, partialOrdering), Result::GREATER);
 }
 
 TEST_FUN(Tricky01) {
@@ -503,22 +501,21 @@ TEST_FUN(Tricky01) {
   partialOrdering[5][5 + 6] = true; // X5 > Y5
 
 
-  affineFunc.push_back(make_pair(0, 2));
-  affineFunc.push_back(make_pair(1, 2));
-  affineFunc.push_back(make_pair(2, 2));
-  affineFunc.push_back(make_pair(3, 2));
-  affineFunc.push_back(make_pair(4, 2));
-  affineFunc.push_back(make_pair(5, 2));
-  affineFunc.push_back(make_pair(0 + 6, -3));
-  affineFunc.push_back(make_pair(1 + 6, -2));
-  affineFunc.push_back(make_pair(2 + 6, -2));
-  affineFunc.push_back(make_pair(3 + 6, -2));
-  affineFunc.push_back(make_pair(4 + 6, -2));
-  affineFunc.push_back(make_pair(5 + 6, -1));
+  posVars.push(make_pair(0, 2));
+  posVars.push(make_pair(1, 2));
+  posVars.push(make_pair(2, 2));
+  posVars.push(make_pair(3, 2));
+  posVars.push(make_pair(4, 2));
+  posVars.push(make_pair(5, 2));
+  negVars.push(make_pair(0 + 6, -3));
+  negVars.push(make_pair(1 + 6, -2));
+  negVars.push(make_pair(2 + 6, -2));
+  negVars.push(make_pair(3 + 6, -2));
+  negVars.push(make_pair(4 + 6, -2));
+  negVars.push(make_pair(5 + 6, -1));
 
 
-  for (unsigned i = 0; i < 10; i++) {
-    shuffleEquation(affineFunc, nPos);
-    ASS_EQ(lc.getSign(affineFunc, partialOrdering, 0), Greater);
-  }
+  ASS_EQ(lc.getSign( 1, posVars, negVars, partialOrdering), Result::INCOMPARABLE);
+  ASS_EQ(lc.getSign( 0, posVars, negVars, partialOrdering), Result::GREATER);
+  ASS_EQ(lc.getSign(-1, posVars, negVars, partialOrdering), Result::GREATER);
 }

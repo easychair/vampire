@@ -21,6 +21,7 @@
 #include <deque>
 
 #include "OrderingComparator.hpp"
+#include "OrderingConstraints/LinearConstraint.hpp"
 
 using namespace std;
 
@@ -478,24 +479,47 @@ void OrderingComparator::processPolyCase()
     i++;
   }
 
-  // TODO change here
 
   auto constant = node->poly->constant;
-  if (constant == 0 && pos == 0 && neg == 0) {
-    *_curr = node->eqBranch;
-    return;
+  // if (constant == 0 && pos == 0 && neg == 0) {
+  //   *_curr = node->eqBranch;
+  //   return;
+  // }
+  // if (constant >= 0 && neg == 0) {
+  //   *_curr = node->gtBranch;
+  //   return;
+  // }
+  // if (constant <= 0 && pos == 0) {
+  //   *_curr = node->ngeBranch;
+  //   return;
+  // }
+  const Polynomial* poly = Polynomial::get(constant, vcs);
+
+  // Linear Constraint Reasoner
+  static Lib::LinearConstraint _lc;
+  Result res = _lc.getSign(poly->constant,
+                           poly->pos,
+                           poly->neg,
+                           trace);
+  switch (res) {
+    case Result::GREATER:
+      *_curr = node->gtBranch;
+      return;
+    case Result::LESS:
+      *_curr = node->ngeBranch;
+      return;
+    case Result::EQUAL:
+      *_curr = node->eqBranch;
+      return;
+    case Result::INCOMPARABLE:
+      node->poly = poly;
+      node->trace = trace;
+      node->ready = true;
+      break;
+    default:
+      ASSERTION_VIOLATION;
+      break;
   }
-  if (constant >= 0 && neg == 0) {
-    *_curr = node->gtBranch;
-    return;
-  }
-  if (constant <= 0 && pos == 0) {
-    *_curr = node->ngeBranch;
-    return;
-  }
-  node->poly = Polynomial::get(constant, vcs);
-  node->ready = true;
-  node->trace = trace;
 }
 
 void OrderingComparator::processVarCase()
