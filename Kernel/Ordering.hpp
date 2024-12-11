@@ -29,7 +29,7 @@
 #include "Lib/Portability.hpp"
 #include "Kernel/SubstHelper.hpp"
 
-#define DEBUG_ORDERING 0
+#define DEBUG_ORDERING 1
 
 namespace Kernel {
 
@@ -155,7 +155,7 @@ protected:
   // l1 and l2 are not equalities and have the same predicate
   virtual Result comparePredicates(Literal* l1,Literal* l2) const = 0;
 
-  PrecedenceOrdering(const DArray<int>& funcPrec, const DArray<int>& typeConPrec, 
+  PrecedenceOrdering(const DArray<int>& funcPrec, const DArray<int>& typeConPrec,
                      const DArray<int>& predPrec, const DArray<int>& predLevels, bool reverseLCM);
   PrecedenceOrdering(Problem& prb, const Options& opt, const DArray<int>& predPrec);
   PrecedenceOrdering(Problem& prb, const Options& opt);
@@ -189,7 +189,7 @@ protected:
 };
 
 
-inline std::ostream& operator<<(std::ostream& out, Ordering::Result const& r) 
+inline std::ostream& operator<<(std::ostream& out, Ordering::Result const& r)
 {
   switch (r) {
     case Ordering::Result::GREATER: return out << "GREATER";

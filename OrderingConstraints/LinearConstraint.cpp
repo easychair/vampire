@@ -326,10 +326,13 @@ bool LinearConstraint::search()
 
 Ordering::Result LinearConstraint::solve()
 {
+  cout << to_string() << endl;
   if (!preProcess())
     return Result::INCOMPARABLE;
-  if (nNegVars == 0 || search())
+  if (nNegVars == 0 || search()) {
+    cout << "returns: " << (inverted ? Result::LESS : Result::GREATER) << endl;
     return inverted ? Result::LESS : Result::GREATER;
+  }
   return Result::INCOMPARABLE;
 }
 
@@ -399,6 +402,7 @@ Result Lib::LinearConstraint::getSign(const Constant& c,
                                       const Lib::Stack<std::pair<VarNum, Coeff>>& negVars,
                                       const Kernel::TermPartialOrdering* partialOrdering)
 {
+  cout << ".";
   bool failed = false;
   inverted = false;
   constant = c;
