@@ -370,7 +370,11 @@ string TermPartialOrdering::to_nice_string() const
       if (e1.value() >= e2.value()) {
         continue;
       }
-      str << e1.key() << " " << po_to_infix(_po->get(e1.value(),e2.value())) << " " << e2.key() << endl;
+      auto pocomp = _po->get(e1.value(),e2.value());
+      if (pocomp == PoComp::UNKNOWN) {
+        continue;
+      }
+      str << e1.key() << " " << po_to_infix(pocomp) << " " << e2.key() << endl;
     }
   }
   return str.str();

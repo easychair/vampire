@@ -36,13 +36,13 @@ void KBOComparator::expandTermCase()
 #endif
   auto w = state->_weightDiff;
   decltype(state->_varDiffs)::Iterator vit(state->_varDiffs);
-  ScopedPtr nonzeros(new Stack<VarCoeffPair>());
+  Stack<VarCoeffPair> nonzeros;
   while (vit.hasNext()) {
     unsigned v;
     int cnt;
     vit.next(v,cnt);
     if (cnt!=0) {
-      nonzeros->push(make_pair(v,cnt));
+      nonzeros.push({ v, cnt });
       w-=cnt; // we have to remove the variable weights from w
     }
     if (cnt<0) {
@@ -66,13 +66,9 @@ void KBOComparator::expandTermCase()
   auto curr = _curr;
   bool weightAdded = (w < 0 || varInbalance);
   if (weightAdded) {
-    sort(nonzeros->begin(),nonzeros->end(),[](const auto& e1, const auto& e2) {
-      return e1.second>e2.second;
-    });
     // we mutate the original node
     curr->node()->tag = T_POLY;
-    curr->node()->w = w;
-    curr->node()->varCoeffPairs = nonzeros.release();
+    curr->node()->poly = Polynomial::get(w, nonzeros);
     curr->node()->gtBranch = gtBranch;
     curr->node()->ngeBranch = ngeBranch;
     curr = &curr->node()->eqBranch;

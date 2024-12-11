@@ -30,13 +30,13 @@ std::ostream& operator<<(std::ostream& out, const OrderingComparator::BranchTag&
 {
   switch (t) {
     case OrderingComparator::BranchTag::T_DATA:
-      out << "r";
+      out << "d";
       break;
     case OrderingComparator::BranchTag::T_TERM:
-      out << "c";
+      out << "t";
       break;
     case OrderingComparator::BranchTag::T_POLY:
-      out << "w";
+      out << "p";
       break;
   }
   return out;
@@ -51,16 +51,39 @@ std::ostream& operator<<(std::ostream& out, const OrderingComparator::Node& node
       break;
     }
     case OrderingComparator::BranchTag::T_POLY: {
-      out << node.w << " ";
-      for (const auto& [var, coeff] : *node.varCoeffPairs) {
-        out << "X" << var << " " << coeff << " ";
-      }
+      out << *node.poly;
       break;
     }
     case OrderingComparator::BranchTag::T_TERM: {
       out << node.lhs << " " << node.rhs;
       break;
     }
+  }
+  return out;
+}
+
+std::ostream& operator<<(std::ostream& out, const OrderingComparator::Polynomial& poly)
+{
+  bool first = true;
+  for (const auto& [var, coeff] : poly.pos) {
+    out << (first ? "" : " + ");
+    first = false;
+    if (coeff!=1) {
+      out << coeff << " * ";
+    }
+    out << TermList::var(var);
+  }
+  for (const auto& [var, coeff] : poly.neg) {
+    out << (first ? "- " : " - ");
+    first = false;
+    if (coeff!=-1) {
+      out << std::abs(coeff) << " * ";
+    }
+    out << TermList::var(var);
+  }
+  if (poly.constant) {
+    out << (poly.constant<0 ? " - " : " + ");
+    out << std::abs(poly.constant);
   }
   return out;
 }
@@ -206,8 +229,8 @@ std::string OrderingComparator::to_dot() const
         style += "polynode,";
         bool first = true;
         label += "$";
-        for (const auto& [var, coeff] : *n->varCoeffPairs) {
-          label += coeff<0 ? "-" : (first ? "" : "+");
+        for (const auto& [var, coeff] : n->poly->pos) {
+          label += first ? "" : "+";
           first = false;
           auto a = std::abs(coeff);
           if (a==1) {
@@ -216,9 +239,19 @@ std::string OrderingComparator::to_dot() const
             label += Int::toString(a) + "\\cdot " + to_tikz_term(TermList::var(var));
           }
         }
-        if (n->w) {
-          label += n->w<0 ? "-" : (first ? "" : "+");
-          label += Int::toString((int)std::abs(n->w));
+        for (const auto& [var, coeff] : n->poly->neg) {
+          label += "-";
+          first = false;
+          auto a = std::abs(coeff);
+          if (a==1) {
+            label += to_tikz_term(TermList::var(var));
+          } else {
+            label += Int::toString(a) + "\\cdot " + to_tikz_term(TermList::var(var));
+          }
+        }
+        if (n->poly->constant) {
+          label += n->poly->constant<0 ? "-" : (first ? "" : "+");
+          label += Int::toString((int)std::abs(n->poly->constant));
         }
         label += "$";
         edges += getBranch(id, n->gtBranch.node(), EdgeTag::GT);
@@ -261,15 +294,25 @@ void* OrderingComparator::next(const SubstApplicator* applicator)
     if (node->tag == BranchTag::T_TERM) {
 
       comp = _ord.isGreaterOrEq(AppliedTerm(node->lhs,applicator,true),AppliedTerm(node->rhs,applicator,true));
-      // _trace.set({ node->lhs, node->rhs, comp });
 
     } else {
       ASS(node->tag == BranchTag::T_POLY);
 
       const auto& kbo = static_cast<const KBO&>(_ord);
-      auto weight = node->w;
+      auto weight = node->poly->constant;
       ZIArray<int> varDiffs;
-      for (const auto& [var, coeff] : *node->varCoeffPairs) {
+      for (const auto& [var, coeff] : node->poly->pos) {
+        AppliedTerm tt(TermList::var(var), applicator, true);
+
+        VariableIterator vit(tt.term);
+        while (vit.hasNext()) {
+          auto v = vit.next();
+          varDiffs[v.var()] += coeff;
+        }
+        int64_t w = kbo.computeWeight(tt);
+        weight += coeff*w;
+      }
+      for (const auto& [var, coeff] : node->poly->neg) {
         AppliedTerm tt(TermList::var(var), applicator, true);
 
         VariableIterator vit(tt.term);
@@ -368,8 +411,7 @@ void OrderingComparator::expand()
       // if refcnt > 1 we copy the node and
       // we can also safely use the original
       if (node->refcnt > 1) {
-        auto varCoeffPairs = new Stack<VarCoeffPair>(*node->varCoeffPairs);
-        *_curr = Branch(node->w, varCoeffPairs);
+        *_curr = Branch(node->poly);
         _curr->node()->eqBranch = node->eqBranch;
         _curr->node()->gtBranch = node->gtBranch;
         _curr->node()->ngeBranch = node->ngeBranch;
@@ -411,28 +453,30 @@ void OrderingComparator::expandTermCase()
 void OrderingComparator::processPolyCase()
 {
   auto node = _curr->node();
-  auto varCoeffPairs = node->varCoeffPairs;
-
   auto trace = getCurrentTrace();
 
   unsigned pos = 0;
   unsigned neg = 0;
-  for (unsigned i = 0; i < varCoeffPairs->size();) {
-    auto& [var, coeff] = (*varCoeffPairs)[i];
-    for (unsigned j = i+1; j < varCoeffPairs->size();) {
-      auto& [var2, coeff2] = (*varCoeffPairs)[j];
+
+  auto vcs = node->poly->pos;
+  vcs.loadFromIterator(node->poly->neg.iter());
+
+  for (unsigned i = 0; i < vcs.size();) {
+    auto& [var, coeff] = vcs[i];
+    for (unsigned j = i+1; j < vcs.size();) {
+      auto& [var2, coeff2] = vcs[j];
       Ordering::Result res;
       if (trace->get(TermList::var(var), TermList::var(var2), res) && res == Ordering::EQUAL) {
         coeff += coeff2;
-        swap((*varCoeffPairs)[j],varCoeffPairs->top());
-        varCoeffPairs->pop();
+        swap(vcs[j],vcs.top());
+        vcs.pop();
         continue;
       }
       j++;
     }
     if (coeff == 0) {
-      swap((*varCoeffPairs)[i],varCoeffPairs->top());
-      varCoeffPairs->pop();
+      swap(vcs[i],vcs.top());
+      vcs.pop();
       continue;
     } else if (coeff > 0) {
       pos++;
@@ -442,23 +486,22 @@ void OrderingComparator::processPolyCase()
     i++;
   }
 
-  if (node->w == 0 && pos == 0 && neg == 0) {
+  auto constant = node->poly->constant;
+  if (constant == 0 && pos == 0 && neg == 0) {
     *_curr = node->eqBranch;
     return;
   }
-  if (node->w >= 0 && neg == 0) {
+  if (constant >= 0 && neg == 0) {
     *_curr = node->gtBranch;
     return;
   }
-  if (node->w <= 0 && pos == 0) {
+  if (constant <= 0 && pos == 0) {
     *_curr = node->ngeBranch;
     return;
   }
-  sort(varCoeffPairs->begin(),varCoeffPairs->end(),[](const auto& e1, const auto& e2) {
-    return e1.second>e2.second;
-  });
-  _curr->node()->ready = true;
-  _curr->node()->trace = trace;
+  node->poly = Polynomial::get(constant, vcs);
+  node->ready = true;
+  node->trace = trace;
 }
 
 void OrderingComparator::processVarCase()
@@ -512,6 +555,38 @@ void OrderingComparator::processVarCase()
   }
   _curr->node()->ready = true;
   _curr->node()->trace = trace;
+}
+
+const OrderingComparator::Polynomial* OrderingComparator::Polynomial::get(int constant, const Stack<VarCoeffPair>& vcs)
+{
+  static Set<Polynomial*> polys;
+
+  auto pos = iterTraits(Stack<VarCoeffPair>::ConstRefIterator(vcs)).filter([](const auto& vc) {
+    return vc.second > 0;
+  }).collect<Stack<VarCoeffPair>>();
+  sort(pos.begin(),pos.end(),[](const auto& vc1, const auto& vc2) {
+    return vc1.first<vc2.first;
+  });
+
+  auto neg = iterTraits(Stack<VarCoeffPair>::ConstRefIterator(vcs)).filter([](const auto& vc) {
+    return vc.second < 0;
+  }).collect<Stack<VarCoeffPair>>();
+  sort(neg.begin(),neg.end(),[](const auto& vc1, const auto& vc2) {
+    return vc1.first<vc2.first;
+  });
+
+  bool unused;
+  return polys.rawFindOrInsert(
+    [&](){
+      auto p = new Polynomial();
+      p->constant = constant;
+      p->pos = std::move(pos);
+      p->neg = std::move(neg);
+      return p;
+    },
+    HashUtils::combine(DefaultHash::hash(constant), DefaultHash::hash(pos), DefaultHash::hash(neg)),
+    [&](Polynomial* p) { return p->constant == constant && p->pos == pos && p->neg == neg; },
+    unused);
 }
 
 const OrderingComparator::Trace* OrderingComparator::getCurrentTrace()
@@ -583,15 +658,8 @@ OrderingComparator::Branch& OrderingComparator::Branch::operator=(Branch&& other
 
 OrderingComparator::Node::~Node()
 {
-  switch(tag) {
-    case T_DATA:
-      alternative.~Branch();
-      break;
-    case T_TERM:
-      break;
-    case T_POLY:
-      delete varCoeffPairs;
-      break;
+  if (tag==T_DATA) {
+    alternative.~Branch();
   }
   ready = false;
 }
