@@ -142,7 +142,12 @@ private:
     void serialize(std::ostream& out);
     Duration totalDuration() const;
 
+    Node clone() const;
+
     Node flatten();
+    void _focus(const char* name, Node& newRoot);
+    Node focus(const char* name);
+    void extendWith(Node const& n);
     struct FlattenState;
     void flatten_(FlattenState&);
   };

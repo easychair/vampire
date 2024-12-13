@@ -14,6 +14,7 @@
 #include <iomanip>
 #include <cstring>
 #include "Shell/Options.hpp"
+#include "Lib/Environment.hpp"
 
 namespace Shell {
 
@@ -182,9 +183,15 @@ void TimeTrace::Node::printPrettyRec(std::ostream& out, NodeFormatOpts& opts)
   }
   out << name << right;
 
-  out << " (total: "<< msetw(4) << total
-      << ", avg: "  << msetw(4) << total / cnt
-      << ", cnt: "  << msetw(6) << cnt
+
+  out << " (total: "<< msetw(4) << total;
+  out << ", avg: "  << msetw(4);
+  if (cnt == 0) {
+    out << "NaN";
+  } else {
+    out << total / cnt;
+  }
+  out << ", cnt: "  << msetw(6) << cnt
       << ")" << std::endl;
   std::sort(children.begin(), children.end(), [](auto& l, auto& r) { return l->totalDuration() > r->totalDuration(); });
   indent.push(indentBeforeLast);
@@ -211,6 +218,50 @@ TimeTrace::Node TimeTrace::Node::flatten()
   auto root = Node(name);
   root.children = std::move(s.nodes);
   root.measurements = measurements;
+  return root;
+}
+
+TimeTrace::Node TimeTrace::Node::clone() const 
+{
+  auto out = Node(name);
+  out.measurements = measurements;
+  out.children = iterTraits(children.iter())
+      .map([](auto& c) { return make_unique<TimeTrace::Node>(c->clone()); })
+      .template collect<Stack>();
+  return out;
+}
+
+void TimeTrace::Node::_focus(const char* name, Node& newRoot)
+{
+  if (strcmp(this->name,  name) == 0) {
+    newRoot.extendWith(*this);
+  } else {
+    for (auto& c : this->children) {
+      c->_focus(name, newRoot);
+    }
+  }
+}
+
+void TimeTrace::Node::extendWith(TimeTrace::Node const& other)
+{
+  ASS(strcmp(other.name, name) == 0)
+  measurements.extend(other.measurements);
+  for (auto& c : other.children) {
+    auto node_ = iterTraits(this->children.iter())
+      .find([&](auto& n) { return n->name == c->name; });
+    if (node_.isSome()) {
+      node_.unwrap()->extendWith(*c);
+    } else {
+      this->children.push(make_unique<TimeTrace::Node>(c->clone()));
+    }
+  }
+}
+
+TimeTrace::Node TimeTrace::Node::focus(const char* name)
+{
+  FlattenState s;
+  auto root = Node(name);
+  _focus(name, root);
   return root;
 }
 
@@ -268,6 +319,21 @@ void TimeTrace::printPretty(std::ostream& out)
     auto node = get<0>(x);
     auto start = get<1>(x);
     node->measurements.remove(now - start);
+  }
+
+  if (!env.options->timeStatisticsFocus().empty()) {
+    out <<                                                  std::endl;
+
+    auto focus = root.focus(env.options->timeStatisticsFocus().c_str());
+    out << "===== start of focussed time profile =====" << std::endl;
+    rootOpts.align = false;
+    focus.printPrettyRec(out, rootOpts);
+    out << "===== end of focussed time profile =====" << std::endl;
+
+    out << "===== start of flattened focussed time profile =====" << std::endl;
+    rootOpts.align = true;
+    focus.flatten().printPrettyRec(out, rootOpts);
+    out << "===== end of flattened focussed time profile =====" << std::endl;
   }
 }
 

@@ -24,7 +24,7 @@
 #include "Hash.hpp"
 #include "Reflection.hpp"
 #include "Lib/Metaiterators.hpp"
-#include "Debug/Output.hpp"
+#include "Lib/Output.hpp"
 
 namespace std {
 template<typename T>

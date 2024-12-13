@@ -68,7 +68,7 @@ public:
   bool isBot() const 
   { return _cancellable.isEmpty(); }
 
-  friend ostream& operator<<(ostream& out, MonomSet const& self)
+  friend std::ostream& operator<<(std::ostream& out, MonomSet const& self)
   { return out << self._cancellable; }
 };
 

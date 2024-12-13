@@ -177,16 +177,7 @@ void Renaming::assertValid() const
 }
 
 std::string Renaming::toString() const
-{
-  std::string res = "[";
-  VariableMap::Iterator mit(_data);
-  while(mit.hasNext()) {
-    unsigned from, to;
-    mit.next(from, to);
-    res+=Int::toString(from)+" -> "+Int::toString(to)+"\t";
-  }
-  return res+"]";
-}
+{ return outputToString(this); }
 
 #endif
 

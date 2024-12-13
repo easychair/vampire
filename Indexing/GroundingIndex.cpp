@@ -34,7 +34,7 @@ using namespace std;
 GroundingIndex::GroundingIndex(const Options& opt)
 {
   _solver = new MinisatInterfacing(opt,true);
-  _grounder = new Kernel::GlobalSubsumptionGrounder(_solver.ptr());
+  _grounder = new Kernel::GlobalSubsumptionGrounder(*_solver);
 }
 
 void GroundingIndex::handleClause(Clause* c, bool adding)

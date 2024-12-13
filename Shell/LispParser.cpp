@@ -294,7 +294,7 @@ LispParser::Exception::Exception(std::string message,const Token& token)
  * Write itself to an ostream.
  * @since 17/07/2004 Helsinki Airport
  */
-void LispParser::Exception::cry(ostream& out) const
+void LispParser::Exception::cry(std::ostream& out) const
 {
   out << "Parser exception: " << _message << '\n';
 } // Exception::cry

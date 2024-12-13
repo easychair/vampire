@@ -469,12 +469,12 @@ Formula* Formula::fromClause(Clause* cl)
   return Formula::quantify(res);
 }
 
-std::ostream& operator<< (ostream& out, const Formula& f)
+std::ostream& operator<< (std::ostream& out, const Formula& f)
 {
   return out << f.toString();
 }
 
-std::ostream& operator<< (ostream& out, const Formula* f)
+std::ostream& operator<< (std::ostream& out, const Formula* f)
 {
   return out << f->toString();
 }

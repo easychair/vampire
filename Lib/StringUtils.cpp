@@ -198,4 +198,47 @@ bool StringUtils::readEqualities(const char* str, char delimiter, char eqChar, D
   return true;
 }
 
+
+/**
+ * Let us define a similarity measure for strings, used to compare option names 
+ * 
+ * This is a Levenshtein (edit) distance and therefore gives the number
+ * of edits needed to change s1 into s2
+ *
+ * @author Giles
+ */
+size_t StringUtils::distance(const std::string &s1, const std::string &s2)
+{
+  const size_t m(s1.size());
+  const size_t n(s2.size());
+
+  if( m==0 ) return n;
+  if( n==0 ) return m;
+
+  DArray<size_t> costs = DArray<size_t>(n+1);
+
+  for( size_t k=0; k<=n; k++ ) costs[k] = k;
+
+  size_t i = 0;
+  for ( std::string::const_iterator it1 = s1.begin(); it1 != s1.end(); ++it1, ++i )
+  {
+    costs[0] = i+1;
+    size_t corner = i;
+
+    size_t j = 0;
+    for ( std::string::const_iterator it2 = s2.begin(); it2 != s2.end(); ++it2, ++j )
+    {
+      size_t upper = costs[j+1];
+      if( *it1 == *it2 ){costs[j+1] = corner;}
+      else{
+        size_t t(upper<corner?upper:corner);
+        costs[j+1] = (costs[j]<t?costs[j]:t)+1;
+      }
+      corner = upper;
+    }
+  }
+
+  return costs[n];
+}
+
 }

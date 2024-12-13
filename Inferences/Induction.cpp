@@ -15,7 +15,7 @@
 #include <utility>
 #include <set>
 
-#include "Debug/Output.hpp"
+#include "Lib/Output.hpp"
 #include "Forwards.hpp"
 #include "Indexing/Index.hpp"
 #include "Indexing/IndexManager.hpp"

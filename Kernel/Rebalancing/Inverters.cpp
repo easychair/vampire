@@ -180,7 +180,7 @@ bool canInvertMulInt(const InversionContext &ctxt) {
 
 template <class Number> bool nonZero(const TermList &t) {
   typename Number::ConstantType c;
-  return theory->tryInterpretConstant(t, c) && Number::zeroC != c;
+  return theory->tryInterpretConstant(t, c) && Number::constant(0) != c;
 }
 
 

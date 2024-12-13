@@ -233,7 +233,7 @@ SaturationAlgorithm::SaturationAlgorithm(Problem& prb, const Options& opt)
   else {
     _passive = makeLevel4(true, opt, "");
   }
-  _active = new ActiveClauseContainer(opt);
+  _active = new ActiveClauseContainer();
 
   _active->attach(this);
   _passive->attach(this);

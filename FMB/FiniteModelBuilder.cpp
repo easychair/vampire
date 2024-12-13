@@ -168,7 +168,7 @@ bool FiniteModelBuilder::reset(){
     cout << "offset for " << f << " is " << offsets << " (arity is " << env.signature->functionArity(f) << ") " << endl;
 #endif
 
-    DArray<unsigned> f_signature = _sortedSignature->functionSignatures[f];
+    auto const& f_signature = _sortedSignature->functionSignatures[f];
     ASS(f_signature.size() == env.signature->functionArity(f)+1);
 
     unsigned add = _sortModelSizes[f_signature[0]];
@@ -195,7 +195,7 @@ bool FiniteModelBuilder::reset(){
  
 #endif
 
-    DArray<unsigned> p_signature = _sortedSignature->predicateSignatures[p];
+    auto const& p_signature = _sortedSignature->predicateSignatures[p];
     ASS(p_signature.size()==env.signature->predicateArity(p));
     unsigned add=1;
     for(unsigned i=0;i<p_signature.size();i++){
@@ -1912,7 +1912,8 @@ void FiniteModelBuilder::onModelFound()
     vampireSortSizes[vSort] = size;
   }
 
-  FiniteModelMultiSorted model(vampireSortSizes);
+  // TODO can we get rid of this clone() and pass a reference instead(?)
+  FiniteModelMultiSorted model(vampireSortSizes.clone());
 
   //Record interpretation of constants and functions
   for(unsigned f=0;f<env.signature->functions();f++){

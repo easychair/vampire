@@ -16,7 +16,7 @@
 #include "RobSubstitution.hpp"
 
 #include "Debug/Assertion.hpp"
-#include "Debug/Output.hpp"
+#include "Lib/Output.hpp"
 #include "Debug/Tracer.hpp"
 #include "Kernel/BottomUpEvaluation.hpp"
 #include "Kernel/Term.hpp"

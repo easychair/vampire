@@ -18,7 +18,7 @@
 
 using namespace Test;
 
-REGISTER_GEN_TESTER(EqualityResolution)
+REGISTER_GEN_TESTER(Test::Generation::GenerationTester<Inferences::EqualityResolution>(EqualityResolution()))
 
 /**
  * NECESSARY: We neet to tell the tester which syntax sugar to import for creating terms & clauses. 
@@ -36,7 +36,7 @@ REGISTER_GEN_TESTER(EqualityResolution)
 
 /** Defines a test case. */
 TEST_GENERATION(test_01,                                   // <- name
-    Generation::TestCase()
+    Generation::AsymmetricTest()
       .input(     clause({  selected(x != f(a)), p(x)  })) // <- input clause
       .expected(exactly(                                   // <- a list of exactly which clauses are expected
             clause({  p(f(a))  })                          //    to be returned. Order matters!
@@ -47,31 +47,31 @@ TEST_GENERATION(test_01,                                   // <- name
     )
 
 TEST_GENERATION(test_02,
-    Generation::TestCase()
+    Generation::AsymmetricTest()
       .input(     clause({  x != f(a), selected(p(x))  }))
       .expected( exactly())
     )
 
 TEST_GENERATION(test_03,
-    Generation::TestCase()
+    Generation::AsymmetricTest()
       .input(     clause({  selected(x != f(a)), selected(p(x))  }))
       .expected( exactly( clause({  p(f(a))                              })))
     )
 
 TEST_GENERATION(test_04,
-    Generation::TestCase()
+    Generation::AsymmetricTest()
       .input(     clause({  selected(g(x) != f(a)), p(x)  }))
       .expected( exactly())
     )
 
 TEST_GENERATION(test_05,
-    Generation::TestCase()
+    Generation::AsymmetricTest()
       .input(     clause({  selected(f(g(x)) != f(y))  }))
       .expected( exactly( clause({})))
     )
 
 TEST_GENERATION(test_06,
-    Generation::TestCase()
+    Generation::AsymmetricTest()
       .input(     clause({  selected(f(g(x)) != f(x))  }))
       .expected( exactly())
     )

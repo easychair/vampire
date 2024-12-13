@@ -16,6 +16,7 @@
 #ifndef __Metaiterators__
 #define __Metaiterators__
 
+#include <tuple>
 #include <utility>
 #include <functional>
 
@@ -26,9 +27,9 @@
 #include "List.hpp"
 #include "DHSet.hpp"
 #include "VirtualIterator.hpp"
-#include "Debug/TimeProfiling.hpp"
 #include "Lib/Option.hpp"
 #include "Lib/Coproduct.hpp"
+#include "Debug/TimeProfiling.hpp"
 
 namespace Lib {
 
@@ -151,6 +152,9 @@ public:
     _next = Option<OWN_ELEMENT_TYPE>();
     return out;
   }
+
+  bool knowsSize() const { return false; }
+  size_t size() const { ASSERTION_VIOLATION }
 
 private:
   
@@ -414,6 +418,7 @@ public:
    */
   OWN_ELEMENT_TYPE next()
   {
+    ALWAYS(hasNext())
     if(_first) {
       //_it1 contains the next value, as hasNext must have
       //been called before. (It would have updated the
@@ -476,10 +481,48 @@ public:
    * the @b size() function, and if the @b knowsSize() function returns true.
    */
   inline size_t size() const { return _inner.size(); }
+
+  auto reverse() && 
+  { return MappingIterator<decltype(std::move(_inner).reverse()), Functor, ResultType>(std::move(_inner).reverse(), std::move(_func)); }
 private:
   Functor _func;
   Inner _inner;
 };
+
+template<typename Iter>
+class IterTraits;
+
+template<typename Iter>
+IterTraits<Iter> iterTraits(Iter);
+
+template<typename Iter>
+class IterFromTryNext
+{
+public:
+  DECL_ELEMENT_TYPE(ELEMENT_TYPE(Iter));
+  DEFAULT_CONSTRUCTORS(IterFromTryNext)
+  IterFromTryNext(Iter iter)
+    : _iter(std::move(iter)) {}
+
+
+  bool hasNext() {
+    if (!_nextCached) { _nextCached = some(_iter.tryNext()); }
+    return _nextCached->isSome();
+  }
+
+  OWN_ELEMENT_TYPE next() {
+    if (!_nextCached) { _nextCached = some(_iter.tryNext()); }
+    return _nextCached.take()->unwrap();
+  }
+
+private:
+  Iter _iter;
+  Option<Option<OWN_ELEMENT_TYPE>> _nextCached;
+};
+
+template<typename Iter>
+IterFromTryNext<Iter> iterFromTryNext(Iter iter)
+{ return IterFromTryNext<Iter>(std::move(iter)); }
 
 
 /**
@@ -775,6 +818,11 @@ public:
   inline T next() { return _next++; };
   inline bool knowsSize() const { return true; }
   inline size_t size() const { return (_to>_from) ? (_to-_from) : 0; }
+  auto reverse() &&
+  { 
+    auto to = _to;
+    return getMappingIterator(std::move(*this), [to](auto i) { return to - 1 - i; }); 
+  }
 private:
   T _next;
   T _from;
@@ -1320,20 +1368,77 @@ template<class... Is>
 auto coproductIter(Coproduct<Is...> is)
 { return iterTraits(CoproductIter<Is...>(std::move(is))); }
 
+template<class Closure>
+struct ApplyClosure {
+   template<class A> 
+   using apply = std::invoke_result_t<Closure, A>;
+};
 
-template<class IfIterCons, class ElseIterCons>
-static auto ifElseIter(bool cond, IfIterCons ifCons, ElseIterCons elseCons) 
+template<unsigned N>
+struct Times {
+  template<class C>
+  using apply = Constant<C::value * N>;
+};
+
+template<unsigned N>
+struct Plus {
+  template<class C>
+  using apply = Constant<C::value + N>;
+};
+
+#define LAZY(...)  [&]() { return __VA_ARGS__; }
+
+template<class A
+  , std::enable_if_t<!std::is_invocable_v<A>, bool> = true
+  >
+auto makeLazy(A a) 
+{ return [a = std::move(a)]() mutable -> A { return std::move(a); }; }
+
+template<class A
+  , std::enable_if_t<std::is_invocable_v<A>, bool> = true
+  >
+auto makeLazy(A a) -> A
+{ return a; }
+
+template<class... Args>
+static auto __ifElseIter(Args... args)
 { 
-  using C = Coproduct<ResultOf<IfIterCons>, ResultOf<ElseIterCons>>;
-  return coproductIter(cond ? C::template variant<0>(ifCons()) : C::template variant<1>(elseCons()));
+  auto tuple = std::tie(args...);
+  constexpr unsigned total = TL::Size<TL::List<Args...>>::val;
+  auto tupleGetApplied = [&](auto N) -> decltype(auto) { return std::get<N.value>(tuple)(); };
+  static_assert(total % 2 == 1);
+
+  using Out = TL::Into<Coproduct, 
+        TL::Map<
+          TL::Closure<decltype(tupleGetApplied)>,
+          TL::Concat<
+            TL::Map<Plus<1>, TL::Map<Times<2>, TL::Range<0, total / 2>>>,
+            TL::List<Constant<total - 1>>
+          >>>;
+
+  Option<Out> out;
+  TL::Range<0, total / 2>::forEach([&](auto token){
+      constexpr unsigned i = TL::TokenType<decltype(token)>::value;
+      if (out.isNone()) {
+        if (tupleGetApplied(Constant<2*i>{})) {
+          out = some(Out::template variant<i>(tupleGetApplied(Constant<2*i + 1>{})));
+        }
+      }
+  });
+  return coproductIter(out ? *out : Out::template variant<total/2>(tupleGetApplied(Constant<total - 1>{})));
 }
 
+template<class... Args>
+static auto ifElseIter(Args... args) 
+{ return __ifElseIter(makeLazy(std::move(args))...); }
 
+#define ifElseIter2(i0, t0, e) ifElseIter(LAZY(i0), LAZY(t0), LAZY(e))
+#define ifElseIter3(i0, t0, i1, t1, e) ifElseIter(LAZY(i0), LAZY(t0), LAZY(i1), LAZY(t1), LAZY(e))
+#define ifElseIter4(i0, t0, i1, t1, i2, t2, e) ifElseIter(LAZY(i0), LAZY(t0), LAZY(i1), LAZY(t1), LAZY(i2), LAZY(t2), LAZY(e))
 
 template<class IfIterCons>
 static auto ifIter(bool cond, IfIterCons ifCons) 
 { return iterTraits(someIf(cond, std::move(ifCons)).intoIter()).flatten(); }
-
 
 template<class T>
 struct EmptyIter
@@ -1342,7 +1447,7 @@ struct EmptyIter
   bool hasNext() { return false; }
   T next() { ASSERTION_VIOLATION }
   unsigned size() { return 0; }
-  bool knownSize() { return true; }
+  bool knowsSize() { return true; }
 };
 
 /** If Pointer references a type that can be used as an iterator, then this wrapper type makes Pointer an Iterator.
@@ -1360,7 +1465,7 @@ public:
   bool hasNext() const { return (*_p).hasNext(); }
   OWN_ELEMENT_TYPE next() { return (*_p).next(); }
   unsigned size() { return (*_p).size(); }
-  bool knownSize() { return (*_p).knownSize(); }
+  bool knowsSize() { return (*_p).knowsSize(); }
 };
 
 template<class Iter>
@@ -1379,6 +1484,12 @@ public:
 
   bool hasNext() 
   { return _iter.hasNext(); }
+
+  bool knowsSize()       { return _iter.knowsSize(); }
+  bool knowsSize() const { return _iter.knowsSize(); }
+
+  auto size()       { return _iter.size(); }
+  auto size() const { return _iter.size(); }
 
   Option<Elem> tryNext() 
   { 
@@ -1447,6 +1558,9 @@ public:
   template<class F>
   IterTraits<MappingIterator<Iter, F>> map(F f)
   { return iterTraits(getMappingIterator<Iter, F>(std::move(_iter), std::move(f))); }
+
+  auto eval()
+  { return map([](auto f){ return f(); }); }
 
   template<class F>
   auto inspect(F f)
@@ -1534,7 +1648,7 @@ public:
   { return maxBy(std::less<Elem>{}); }
 
   auto timeTraced(const char* name)
-  { return iterTraits(timeTraceIter(name, std::move(_iter))); }
+  { return iterTraits(TIME_TRACE_ITER(name, std::move(_iter))); }
 
   template<class Result, class F>
   auto fold(Result init, F f) -> Result
@@ -1554,15 +1668,26 @@ public:
   auto zip(OtherIter other)
   { return map([other = std::move(other)](Elem x) mutable { return std::make_pair(std::move(x), other.next()); }); }
 
+  auto zipWithIndex()
+  { return map([idx = 0](Elem x) mutable { return std::make_pair(std::move(x), idx++); }); }
+
+  template<class Val>
+  auto store(Val v) 
+  { return map([v = std::move(v)](Elem x) -> Elem { return x; }); }
+
+  auto reverse() &&
+  { return iterTraits(std::move(_iter).reverse()); }
 
   auto sum()
   { return fold([](Elem l, Elem r) { return l + r; }) || []() { return Elem(0); }; }
 
+  template<unsigned n>
+  auto collectTuple()
+  { return TL::Range<0, n>::toTuple([&](auto i) { return next(); }); }
+ 
   template<class Container>
-  Container collect()
-  { 
-    return Container::fromIterator(*this); 
-  }
+  auto collect()
+  { return Container::fromIterator(*this); }
   
   template<template<class> class Container>
   Container<Elem> collect()
@@ -1608,6 +1733,9 @@ public:
 template<class Iter> 
 IterTraits<Iter> iterTraits(Iter i) { return IterTraits<Iter>(std::move(i)); }
 
+static const auto range = [](auto from, auto to) 
+  { return iterTraits(getRangeIterator<decltype(to)>(decltype(to)(from), to)); };
+
 template<class I1>
 static auto concatIters(I1 i1) 
 { return iterTraits(std::move(i1)); }
@@ -1615,15 +1743,6 @@ static auto concatIters(I1 i1)
 template<class I1, class I2, class... Is>
 static auto concatIters(I1 i1, I2 i2, Is... is) 
 { return iterTraits(CatIterator<I1, decltype(concatIters(std::move(i2), std::move(is)...))>(std::move(i1), concatIters(std::move(i2), std::move(is)...))); }
-
-// TODO optimize (?)
-/** returns an itertor that returns exatly `items` as elements */
-template<class... Items>
-auto iterItems(Items... items)
-{ return concatIters(getSingletonIterator(items)...); }
-
-static const auto range = [](auto from, auto to) 
-  { return iterTraits(getRangeIterator<decltype(to)>(from, to)); };
 
 template<class I1, class I2, class Cmp>
 auto iterSortedDiff(I1 i1, I2 i2, Cmp cmp) 
@@ -1656,7 +1775,15 @@ template<class Array> auto arrayIter(Array const& a) { return arrayIter(        
 template<class Array> auto arrayIter(Array     && a) { return arrayIter(std::move(a), a.size()); }
 template<class Array> auto arrayIter(Array      & a) { return arrayIter(          a , a.size()); }
 
-}
+template<class Item, class... Items>
+auto iterItems(Item item, Items... items) 
+{ return arrayIter(Stack<Item>{std::move(item), std::move(items)...}); }
+
+template<class Item>
+auto iterItems()
+{ return arrayIter(Stack<Item>{}); }
+
+} // namespace Lib
 
 template <typename Iterator>
 class STLIterator

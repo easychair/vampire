@@ -159,9 +159,10 @@ private:
       auto ordCons_ok = iterTraits(e->ordCons.iter()).all([ord,&applicator](auto& ordCon) {
         if (!ordCon.comp) {
           ordCon.comp = ord->createComparator();
-          ordCon.comp->insert({ { ordCon.lhs, ordCon.rhs, Ordering::GREATER } });
+          ordCon.comp->insert({ { ordCon.lhs, ordCon.rhs, Ordering::GREATER } }, (void*)0x1);
         }
-        return ordCon.comp->check(&applicator);
+        ordCon.comp->reset();
+        return ordCon.comp->next(&applicator);
       });
       if (!ordCons_ok) {
         continue;

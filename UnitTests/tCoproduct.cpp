@@ -149,7 +149,7 @@ struct NonCopy {
   bool operator==(const NonCopy& other) const {
     return content == other.content;
   }
-  friend ostream& operator<<(ostream& out, const NonCopy& x)  {
+  friend std::ostream& operator<<(std::ostream& out, const NonCopy& x)  {
     return out << "NonCopy(" << x.content << ")";
   }
 };

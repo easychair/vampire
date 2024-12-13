@@ -590,7 +590,7 @@ void SubstitutionTree<LeafData_>::IntermediateNode::output(std::ostream& out, bo
     if (multiline) {
       auto outp = [&](Node** x) { 
         out << std::endl; 
-        OutputMultiline<int>::outputIndent(out, indent + 1);
+        Output::Multiline<int>::outputIndent(out, indent + 1);
         out << "| ";
         (*x)->output(out, multiline, indent + 1);
       };
@@ -600,7 +600,7 @@ void SubstitutionTree<LeafData_>::IntermediateNode::output(std::ostream& out, bo
         outp(childIter.next());
       }
       out << std::endl; 
-      OutputMultiline<int>::outputIndent(out, indent + 1);
+      Output::Multiline<int>::outputIndent(out, indent + 1);
       out << "]";
 
     } else {

@@ -22,8 +22,6 @@
 
 namespace Kernel {
 
-using OrderingConstraints = Stack<Ordering::Constraint>;
-
 /**
  * Class implementing runtime specialized ordering check between two terms.
  * The comparator is created and called from inside the respective ordering
@@ -32,14 +30,14 @@ using OrderingConstraints = Stack<Ordering::Constraint>;
  */
 struct OrderingComparator
 {
-protected:
-  struct Branch;
 public:
   OrderingComparator(const Ordering& ord);
   virtual ~OrderingComparator();
 
-  bool check(const SubstApplicator* applicator);
-  void insert(const OrderingConstraints& comps);
+  void reset() { _curr = &_source; _prev = nullptr; /* _trace.reset(); */ }
+
+  void* next(const SubstApplicator* applicator);
+  void insert(const Stack<Ordering::Constraint>& comps, void* result);
 
   friend std::ostream& operator<<(std::ostream& out, const OrderingComparator& comp);
   std::string to_dot() const;
@@ -51,7 +49,7 @@ protected:
   void processPolyCase();
 
   enum BranchTag {
-    T_RESULT = 0u,
+    T_DATA = 0u,
     T_TERM = 1u,
     T_POLY = 2u,
   };
@@ -72,10 +70,6 @@ protected:
     }
 
     Branch() = default;
-    explicit Branch(bool result) {
-      setNode(new Node(result));
-      _node->ready = true;
-    }
     template<typename S, typename T> Branch(S&& s, T&& t) {
       setNode(new Node(std::forward<S>(s), std::forward<T>(t)));
     }
@@ -101,6 +95,11 @@ protected:
   struct Polynomial {
     static const Polynomial* get(int constant, const Stack<VarCoeffPair>& vcs);
 
+    auto asTuple() const { return std::make_tuple(constant, pos, neg); }
+
+    IMPL_HASH_FROM_TUPLE(Polynomial);
+    IMPL_COMPARISONS_FROM_TUPLE(Polynomial);
+
     int constant;
     Stack<VarCoeffPair> pos;
     Stack<VarCoeffPair> neg;
@@ -109,6 +108,7 @@ protected:
   using Trace = TermPartialOrdering;
 
   const Trace* getCurrentTrace();
+  std::pair<Node*, Result> getPrevPoly();
 
   struct Node {
     static_assert(sizeof(uint64_t) == sizeof(Branch));
@@ -118,10 +118,10 @@ protected:
 
     auto& getBranch(Ordering::Result r) {
       switch (r) {
-        case Ordering::GREATER:
-          return gtBranch;
         case Ordering::EQUAL:
           return eqBranch;
+        case Ordering::GREATER:
+          return gtBranch;
         case Ordering::INCOMPARABLE:
           return ngeBranch;
         default:
@@ -129,8 +129,8 @@ protected:
       }
     }
 
-    explicit Node(bool result)
-      : tag(T_RESULT), result(result) {}
+    explicit Node(void* data, Branch alternative)
+      : tag(T_DATA), data(data), alternative(alternative) {}
     explicit Node(TermList lhs, TermList rhs)
       : tag(T_TERM), lhs(lhs), rhs(rhs) {}
     explicit Node(const Polynomial* p)
@@ -147,24 +147,28 @@ protected:
     bool ready = false;
 
     union {
-      bool result;
+      void* data = nullptr;
       TermList lhs;
       const Polynomial* poly;
     };
     union {
+      Branch alternative;
       TermList rhs;
     };
 
-    Branch gtBranch;
     Branch eqBranch;
+    Branch gtBranch;
     Branch ngeBranch;
     int refcnt = 0;
     const Trace* trace = nullptr;
+    // points to the previous node containing a polynomial and branch
+    // that was taken, otherwise null if no such node exists.
+    std::pair<Node*, Result> prevPoly = { nullptr, Result::INCOMPARABLE };
   };
 
   const Ordering& _ord;
   Branch _source;
-  Branch _fail;
+  Branch _sink;
   Branch* _curr;
   Branch* _prev;
   // Trace _trace;

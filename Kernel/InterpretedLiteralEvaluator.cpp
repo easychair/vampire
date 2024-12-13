@@ -423,9 +423,9 @@ public:
 
   TypedEvaluator() {}
 
-  bool isZero(T arg) const { return number::zeroC == arg; }
+  bool isZero(T arg) const { return number::constant(0) == arg; }
   TermList getZero() const {return number::zero(); }
-  bool isOne(T arg) const { return number::oneC == arg; }
+  bool isOne(T arg) const { return number::constant(1) == arg; }
   bool isMinusOne(T arg) const { return typename number::ConstantType(-1) == arg; }
   TermList invert(TermList t) const { return number::minus(t); }
   bool isAddition(Interpretation interp) const { return interp == number::addI; }

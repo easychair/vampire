@@ -22,7 +22,7 @@
 
 #include <iostream>
 #include <iomanip>
-#include "Debug/Output.hpp"
+#include "Lib/Output.hpp"
 
 namespace Debug {
 
@@ -49,12 +49,12 @@ template<class A, class... As> struct _printDbg<A, As...>{
 
 template<class... A> void printDbg(const char* file, int line, const A&... msg)
 {
-  int width = 60;
+  unsigned width = 60;
   std::cout << "[ debug ] ";
   for (const char* c = file; *c != 0 && width > 0; c++, width--) {
     std::cout << *c;
   }
-  for (int i = 0; i < width; i++) {
+  for (unsigned i = 0; i < width; i++) {
     std::cout << ' ';
   }
   std::cout <<  "@" << std::setw(5) << line << ":";
@@ -65,9 +65,18 @@ template<class... A> void printDbg(const char* file, int line, const A&... msg)
 } // namespace Debug
 
 #if VDEBUG
-#  define DBG(...) { Debug::printDbg(__FILE__, __LINE__, __VA_ARGS__); }
+
+#ifdef ABSOLUTE_SOURCE_DIR
+#define __REL_FILE__  (&__FILE__[sizeof(ABSOLUTE_SOURCE_DIR) / sizeof(ABSOLUTE_SOURCE_DIR[0])])
+#else
+#define __REL_FILE__  __FILE__
+#endif
+
+#  define DBG(...) { Debug::printDbg(__REL_FILE__, __LINE__, __VA_ARGS__); }
+#  define WARN(...) { DBG("WARNING: ", __VA_ARGS__); }
 #  define DBGE(x) DBG(#x, " = ", x)
 #else // ! VDEBUG
+#  define WARN(...) {}
 #  define DBG(...) {}
 #  define DBGE(x) {}
 #endif

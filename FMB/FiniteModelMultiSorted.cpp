@@ -532,15 +532,11 @@ void FiniteModelMultiSorted::eliminateSortFunctionsAndPredicates(const Stack<uns
     // we will need to reencode everything
 
     // save the old stuff
-    DArray<unsigned> old_f_offsets;
-    _f_offsets.swap(old_f_offsets);
-    DArray<unsigned> old_f_interpretation;
-    _f_interpretation.swap(old_f_interpretation);
-    DArray<unsigned> old_p_offsets;
-    _p_offsets.swap(old_p_offsets);
-    DArray<char> old_p_interpretation;
-    _p_interpretation.swap(old_p_interpretation);
-    DArray<unsigned> old_sizes = _sizes; // this is a copy, not a swap
+    auto old_f_offsets        = std::move(_f_offsets);
+    auto old_f_interpretation = std::move(_f_interpretation);
+    auto old_p_offsets        = std::move(_p_offsets);
+    auto old_p_interpretation = std::move(_p_interpretation);
+    auto old_sizes = _sizes.clone();
 
     // update size of the affected sort
     _sizes[srt] = newSize;
@@ -683,15 +679,11 @@ void FiniteModelMultiSorted::eliminateSortFunctionsAndPredicates(const Stack<uns
     // we will need to reencode everything
 
     // save the old stuff
-    DArray<unsigned> old_f_offsets;
-    _f_offsets.swap(old_f_offsets);
-    DArray<unsigned> old_f_interpretation;
-    _f_interpretation.swap(old_f_interpretation);
-    DArray<unsigned> old_p_offsets;
-    _p_offsets.swap(old_p_offsets);
-    DArray<char> old_p_interpretation;
-    _p_interpretation.swap(old_p_interpretation);
-    DArray<unsigned> old_sizes = _sizes; // this is a copy, not a swap
+    auto old_f_offsets        = std::move(_f_offsets);
+    auto old_f_interpretation = std::move(_f_interpretation);
+    auto old_p_offsets        = std::move(_p_offsets);
+    auto old_p_interpretation = std::move(_p_interpretation);
+    auto old_sizes = _sizes.clone();
 
     // update size of the affected sort
     _sizes[srt] = newSize;

@@ -12,75 +12,26 @@
  * Implements class Grounder.
  */
 
-#include <algorithm>
-
-#include "Lib/Environment.hpp"
-#include "Lib/SharedSet.hpp"
-
 #include "Kernel/Clause.hpp"
-#include "Kernel/InferenceStore.hpp"
 #include "Kernel/Renaming.hpp"
-#include "Kernel/Signature.hpp"
-#include "Kernel/SortHelper.hpp"
-#include "Kernel/SubstHelper.hpp"
 #include "Kernel/Term.hpp"
 #include "Kernel/TermIterators.hpp"
 
-#include "SAT/SATClause.hpp"
-#include "SAT/SATInference.hpp"
 #include "SAT/SATLiteral.hpp"
 #include "SAT/SATSolver.hpp"
 
 #include "Grounder.hpp"
 
-using namespace std;
 using namespace Kernel;
 
-/**
- * Return SATClauseIterator with SAT clauses that are results
- * of grounding of @c cl.
- */
-SATClause* Grounder::ground(Clause* cl)
-{
-  if(!cl->noSplits()) {
-    NOT_IMPLEMENTED;
-  }
-
-  SATClause* gndNonProp = groundNonProp(cl);
-//  cout<<gndNonProp->toString()<<endl;
-
-  SATInference* inf = new FOConversionInference(cl);
-  gndNonProp->setInference(inf);
-
-  return gndNonProp;
-}
-
-/**
- * Return SATClause that is a result of grounding of the
- * non-propositional part of @c cl.
- *
- * The order of literals in @c cl is preserved.
- *
- * @param cl the clause
- * @param acc previously accumulated literals
- * @param normLits if non-zero, array to receive normalized literals
- * (in the order of literals in the clause). Size of the array must be
- * at least equal to te size of the clause. There is one-to-one
- * correspondence between normalized literals and SAT literals.
- */
-void Grounder::groundNonProp(Clause* cl, SATLiteralStack& acc, Literal** normLits)
+void GlobalSubsumptionGrounder::groundNonProp(Clause* cl, SATLiteralStack& acc)
 {
   static DArray<Literal*> lits;
 
   unsigned clen = cl->length();
 
-  if(normLits) {
-    std::copy(cl->literals(), cl->literals()+clen, normLits);
-  }
-  else {
-    lits.initFromArray(clen, *cl);
-    normLits = lits.array();
-  }
+  lits.initFromArray(clen, *cl);
+  Literal **normLits = lits.array();
 
   normalize(clen, normLits);
 
@@ -90,33 +41,7 @@ void Grounder::groundNonProp(Clause* cl, SATLiteralStack& acc, Literal** normLit
   }
 }
 
-/**
- * Return SATClause that is a result of grounding of the
- * non-propositional part of @c cl.
- *
- * The order of literals in @c cl is preserved.
- *
- * @param cl the clause
- * @param normLits if non-zero, array to receive normalized literals
- * (in the order of literals in the clause). Size of the array must be
- * at least equal to te size of the clause. There is one-to-one
- * correspondence between normalized literals and SAT literals.
- */
-SATClause* Grounder::groundNonProp(Clause* cl, Literal** normLits)
-{
-  static SATLiteralStack gndLits;
-  gndLits.reset();
-
-  groundNonProp(cl, gndLits, normLits);
-
-  SATClause* res = SATClause::fromStack(gndLits);
-  return res;
-}
-
-/**
- * Return SATLiteral corresponding to @c lit.
- */
-SATLiteral Grounder::groundLiteral(Literal* lit)
+SATLiteral GlobalSubsumptionGrounder::groundLiteral(Literal* lit)
 {
   Literal* norm = lit;
   normalize(1, &norm);
@@ -124,30 +49,17 @@ SATLiteral Grounder::groundLiteral(Literal* lit)
   return slit;
 }
 
-/**
- * Return SATLiteral corresponding to @c lit.
- */
-SATLiteral Grounder::groundNormalized(Literal* lit)
+SATLiteral GlobalSubsumptionGrounder::groundNormalized(Literal* lit)
 {
   bool isPos = lit->isPositive();
   Literal* posLit = Literal::positiveLiteral(lit);
 
   unsigned* pvar;
-  if(_asgn.getValuePtr(posLit, pvar)) {    
-    *pvar = _satSolver->newVar();
+  if(_asgn.getValuePtr(posLit, pvar)) {
+    *pvar = _satSolver.newVar();
   }
   return SATLiteral(*pvar, isPos);
 }
-
-LiteralIterator Grounder::groundedLits()
-{
-  return _asgn.domain();
-}
-
-
-////////////////////////////////
-// GlobalSubsumptionGrounder
-//
 
 struct GlobalSubsumptionGrounder::OrderNormalizingComparator
 {
@@ -173,7 +85,7 @@ struct GlobalSubsumptionGrounder::OrderNormalizingComparator
     static DisagreementSetIterator dsit;
     dsit.reset(la, lb, false);
     ALWAYS(dsit.hasNext());
-    pair<TermList,TermList> da = dsit.next();
+    auto da = dsit.next();
     if(da.first.isVar()!=da.second.isVar()) {
       return da.first.isVar();
     }
@@ -191,8 +103,6 @@ struct GlobalSubsumptionGrounder::OrderNormalizingComparator
 
 void GlobalSubsumptionGrounder::normalize(unsigned cnt, Literal** lits)
 {
-  if(!_doNormalization) { return; }
-
   if(cnt==0) { return; }
   if(cnt==1) {
     lits[0] = Renaming::normalize(lits[0]);
@@ -213,51 +123,3 @@ void GlobalSubsumptionGrounder::normalize(unsigned cnt, Literal** lits)
     lits[li] = normalizer.apply(lits[li]);
   }
 }
-
-
-/////////////////
-// IGGrounder
-//
-
-IGGrounder::IGGrounder(SATSolver* satSolver) : Grounder(satSolver)
-{
-  _tgtTerm = TermList(0, false);
-  //TODO: make instantiation happen with the most prolific symbol of each sort
-/*  unsigned funs = env.signature->functions();
-  for(unsigned i=0; i<funs; i++) {
-    if(env.signature->functionArity(i)==0) {
-      _tgtTerm = TermList(Term::createConstant(i));
-      break;
-    }
-  }*/
-}
-
-class IGGrounder::CollapsingApplicator
-{
-  TermList _tgtTerm;
-public:
-  CollapsingApplicator(TermList tgtTerm) : _tgtTerm(tgtTerm) {}
-  TermList apply(unsigned var)
-  {
-//    return TermList(0, false);
-    return _tgtTerm;
-  }
-};
-
-/**
- * Return literal that has all variables replaced by variable
- * number zero.
- */
-Literal* IGGrounder::collapseVars(Literal* lit)
-{
-  CollapsingApplicator apl(_tgtTerm);
-  return SubstHelper::apply(lit, apl);
-}
-
-void IGGrounder::normalize(unsigned cnt, Literal** lits)
-{
-  for(unsigned i=0; i<cnt; i++) {
-    lits[i] = collapseVars(lits[i]);
-  }
-}
-

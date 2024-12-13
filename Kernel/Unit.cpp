@@ -300,7 +300,7 @@ bool Unit::minimizeAncestorsAndUpdateSelectedStats()
   return seenInputInference;
 }
 
-std::ostream& Kernel::operator<<(ostream& out, const Unit& u)
+std::ostream& Kernel::operator<<(std::ostream& out, const Unit& u)
 {
   return out << u.toString();
 }

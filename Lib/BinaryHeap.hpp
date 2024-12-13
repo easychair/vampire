@@ -215,6 +215,21 @@ public:
   auto iter() const 
   { return arrayIter(_data, _size); }
 
+  friend std::ostream& operator<<(std::ostream& out, BinaryHeap const& self) 
+  { 
+    out << "[";
+    auto iter = self.iter();
+    if (iter.hasNext()) {
+      out << iter.next();
+      while (iter.hasNext()) {
+        out << ", " << iter.next();
+      }
+    }
+    return out << "]";
+  }
+
+
+
 private:
   class BHPopBacktrackObject
   : public BacktrackObject

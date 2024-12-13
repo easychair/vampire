@@ -506,6 +506,8 @@ public:
     const List* _lst;
   };
 
+  Iterator iter() const { return Iterator(this); }
+
   /** iterator over references to list elements */
   class RefIterator {
    public:
@@ -535,6 +537,8 @@ public:
     /** the rest of the list */
     List* _lst;
   };
+
+  RefIterator iter() { return RefIterator(this); }
 
   /** Iterator that allows one to delete the current element */
   class DelIterator {
@@ -667,6 +671,16 @@ public:
      * if _cur=null then no next was called */
     List* _cur;
   };
+  RefIterator delIter() { return DelIterator(this); }
+
+  template<class Iter>
+  static List* fromIterator(Iter iter) {
+    List* result = List::empty();
+    while (iter.hasNext()) {
+      List::push(iter.next(), result);
+    }
+    return result;
+  }
 
   /**
    * iterator over the list elements

@@ -16,7 +16,7 @@
 #ifndef __LiteralIndex__
 #define __LiteralIndex__
 
-#include "Debug/Output.hpp"
+#include "Lib/Output.hpp"
 #include "Lib/DHMap.hpp"
 
 #include "Index.hpp"
@@ -48,9 +48,8 @@ public:
   size_t getUnificationCount(Literal* lit, bool complementary)
   { return _is->getUnificationCount(lit, complementary); }
 
-
   friend std::ostream& operator<<(std::ostream& out,                 LiteralIndex const& self) { return out << *self._is; }
-  friend std::ostream& operator<<(std::ostream& out, OutputMultiline<LiteralIndex>const& self) { return out << multiline(*self.self._is, self.indent); }
+  friend std::ostream& operator<<(std::ostream& out, Output::Multiline<LiteralIndex>const& self) { return out << Output::multiline(*self.self._is, self.indent); }
 
 protected:
   LiteralIndex(LiteralIndexingStructure<Data>* is) : _is(is) {}

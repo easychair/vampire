@@ -33,11 +33,16 @@ namespace Lib {
 
 namespace TL = TypeList;
 
-template<unsigned v>
-struct Constant { static constexpr unsigned value = v; };
-
 template <class... As>
 class Coproduct;
+
+/* a type level function that maps a List<F, A> to the result std::invoke_result_t<F,A> */
+struct ApplyFuncToArg
+{
+  template<class Pair>
+  using apply = std::invoke_result_t<TL::Get<0, Pair>, TL::Get<1, Pair>>;
+};
+
 
 #define USE_SWITCH 0
 
@@ -444,9 +449,13 @@ class Coproduct
   // TODO allow uninit constructor if all alternatives are uninit constructible
   Coproduct() {}
 
+public:
+
   inline unsigned tag() const { return _inner.tag(); }
 
-public:
+  Coproduct fromTail(Coproduct<As...> tail) 
+  { return Coproduct(std::move(tail)); }
+
 
   /** Returns whether this coproduct is the variant idx */
   template<unsigned idx> bool is() const
@@ -473,12 +482,6 @@ public:
 
 #define REF_POLYMORPIHIC(REF, MOVE)                                                       \
                                                                                           \
-  /* Coproduct &operator=(Coproduct REF other) {                                          \
-    this->~Coproduct();                                                                   \
-    ::new(this) Coproduct(MOVE(other));                                                   \
-    return *this;                                                                         \
-  }  */                                                                                   \
-                                                                                          \
    /**                                                                                    \
    * transforms all variants of this Coproduct to the same type and retuns the result     \
    *                                                                                      \
@@ -498,13 +501,27 @@ public:
   /**                                                                                     \
    * transforms all variants of this Coproduct to the same type and retuns the result     \
    *                                                                                      \
-   * This function works basically in the same way as match, but takes one polymorphic function object that   \
-   * can transform any variant instead of multiple functions per variant.                 \
+   * This function works basically in the same way as match, but takes one polymorphic    \
+   * function object that can transform any variant instead of multiple functions per     \
+   * variant.                                                                             \
    */                                                                                     \
   template <class F>                                                                      \
   inline auto apply(F f) REF -> decltype(auto) {                                          \
     return _inner.switchN([&](auto N) -> decltype(auto) {                                 \
         return f((TL::Get<N.value, Ts> REF)MOVE(unwrap<N.value>()));                      \
+    });                                                                                   \
+  }                                                                                       \
+  /**                                                                                     \
+   * Like `apply` but not expecting that the function F will return the same type for any \
+   * variant but instead `applyCo` returns a coproduct itself.                            \
+   */                                                                                     \
+  template <class F>                                                                      \
+  inline auto applyCo(F f) REF -> decltype(auto) {                                        \
+    using Out = TL::Into<Coproduct, TL::Map<ApplyFuncToArg,                               \
+          TL::Zip<TL::Repeat<TL::Size<Ts>::val, F>, TL::List<As REF...>>>>;               \
+    return _inner.switchN([&](auto N) -> decltype(auto) {                                 \
+        return Out::template variant<N.value>(                                            \
+            f((TL::Get<N.value, Ts> REF)MOVE(unwrap<N.value>())));                        \
     });                                                                                   \
   }                                                                                       \
                                                                                           \
@@ -516,8 +533,24 @@ public:
   }                                                                                       \
                                                                                           \
   /**                                                                                     \
-   * returns the value of this Coproduct if its variant is of type B. If ifs variant is of another type       \
-   * the result is undefined.                                                             \
+   * Like `match` but not expecting that the function F will return the same type for any \
+   * variant but instead `map` returns a coproduct itself.                                \
+   */                                                                                     \
+  template <class... F>                                                                   \
+  auto map(F... fs) REF {                                                                 \
+    auto fs_ = std::tie(fs...);                                                           \
+    using Fs = TL::List<F...>;                                                            \
+    using Out = TL::Into<Coproduct, TL::Map<ApplyFuncToArg, TL::Zip<Fs, Ts>>>;            \
+    return _inner.switchN([&](auto N) -> decltype(auto) {                                 \
+        auto& f = std::get<N.value>(fs_);                                                 \
+        return Out::template variant<N.value>(f(unwrap<N.value>()));                      \
+    });                                                                                   \
+  }                                                                                       \
+                                                                                          \
+                                                                                          \
+  /**                                                                                     \
+   * returns the value of this Coproduct if its variant is of type B. If ifs variant is   \
+   * of another type the result is undefined.                                             \
    *                                                                                      \
    * \pre B must occur exactly once in As...                                              \
    */                                                                                     \
@@ -525,7 +558,8 @@ public:
   { return MOVE(unwrap<TL::IdxOf<B, Ts>::val>()); }                                       \
                                                                                           \
   /**                                                                                     \
-   * returns the value of this Coproduct if its variant's index is idx. otherwise the result is undefined.    \
+   * returns the value of this Coproduct if its variant's index is idx. otherwise the     \
+   * result is undefined.                                                                 \
    *                                                                                      \
    * \pre idx must be less than the number of variants of this Coproduct                  \
    */                                                                                     \
@@ -537,7 +571,8 @@ public:
   }                                                                                       \
                                                                                           \
   /**                                                                                     \
-   * returns the value of this Coproduct if its variant is of type B. If ifs variant is of another type       \
+   * returns the value of this Coproduct if its variant is of type B. If ifs variant is   \
+   * of another type                                                                      \
    * an empty Option is returned.                                                         \
    *                                                                                      \
    * \pre B must occur exactly once in As...                                              \
@@ -546,7 +581,8 @@ public:
   { return as<TL::IdxOf<B, Ts>::val>(); }                                                 \
                                                                                           \
   /**                                                                                     \
-   * returns the value of this Coproduct if its variant's index is idx. otherwise an empty Option is returned.\
+   * returns the value of this Coproduct if its variant's index is idx. otherwise an      \
+   * empty Option is returned.                                                            \
    *                                                                                      \
    * \pre idx must be less than the number of variants of this Coproduct                  \
    */                                                                                     \
@@ -637,6 +673,30 @@ template<class... Ts> struct std::hash<Lib::Coproduct<Ts...>>
         self.apply([](auto const& x){ return std::hash<std::remove_const_t<std::remove_reference_t<decltype(x)>>>{}(x); }));
   }
 };
+template<class... As> struct SelectOutput;
+
+template<class Cons> struct SelectOutput<Cons> { using type = Coproduct<std::result_of_t<Cons()>>; };
+
+template<class Cond, class Cons, class... Rest>
+struct SelectOutput<Cond, Cons, Rest...> {
+  using type = TypeList::Into<Coproduct, 
+     TypeList::Concat< TypeList::List<std::result_of_t<Cons()>>
+                     , typename SelectOutput<Rest...>::type::Ts 
+                     >>;
+};
+
+template<class Cons>
+auto select(Cons cons) -> Coproduct<decltype(cons())>
+{ return Coproduct<decltype(cons())>::template variant<0>(cons()); }
+
+template<class Cond, class Cons, class... Rest>
+auto select(Cond cond, Cons cons, Rest... rest) ->  SelectOutput<Cond, Cons, Rest...>
+{
+  return cond() ? SelectOutput<Cond, Cons, Rest...>::template variant<0>(cons())
+                : SelectOutput<Cond, Cons, Rest...>::fromTail(select(std::move(rest)...));
+}
+
+
 
 
 #endif // __LIB_COPRODUCT__H__

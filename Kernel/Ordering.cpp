@@ -826,7 +826,7 @@ DArray<int> PrecedenceOrdering::predLevelsFromOptsAndPrec(Problem& prb, const Op
   return predicateLevels;
 }
 
-void PrecedenceOrdering::show(ostream& out) const 
+void PrecedenceOrdering::show(std::ostream& out) const 
 {
   auto _show = [&](const char* precKind, unsigned cntFunctors, auto getSymbol, auto compareFunctors)
     {

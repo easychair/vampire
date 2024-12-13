@@ -11,7 +11,7 @@
 
 #include "Kernel/Polynomial.hpp"
 #include "Kernel/PolynomialNormalizer.hpp"
-#include "Debug/Output.hpp"
+#include "Lib/Output.hpp"
 
 #define DEBUG(...) // DBG(__VA_ARGS__)
 
@@ -61,7 +61,7 @@ std::ostream& operator<<(std::ostream& out, const FuncId& self)
   if (self.numTypeArgs() == 0) {
     return out << self.symbol()->name(); 
   } else {
-    return out << self.symbol()->name() << "<" << outputInterleaved(", ", self.iterTypeArgs())  << ">"; 
+    return out << self.symbol()->name() << "<" << Output::interleaved(", ", self.iterTypeArgs())  << ">"; 
   }
 }
 

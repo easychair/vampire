@@ -54,6 +54,22 @@ public:
   DivByZeroException() : ArithmeticException("divided by zero"){} 
 };
 
+enum class Sign : uint8_t {
+  Zero = 0,
+  Pos = 1,
+  Neg = 2,
+};
+
+inline std::ostream& operator<<(std::ostream& out, Sign const& self)
+{
+  switch(self) {
+    case Sign::Zero: return out << "0";
+    case Sign::Pos: return out << "+";
+    case Sign::Neg: return out << "-";
+  }
+  ASSERTION_VIOLATION
+}
+
 class IntegerConstantType
 {
 public:
@@ -99,6 +115,11 @@ public:
   bool operator<=(const IntegerConstantType& o) const { return !((*this)>o); }
 
   InnerType toInner() const { return _val; }
+
+  Sign sign() const 
+  { return _val > 0 ? Sign::Pos
+     : _val < 0 ? Sign::Neg
+     :            Sign::Zero; }
 
   bool isZero(){ return _val==0; }
   bool isNegative(){ return _val<0; }
@@ -477,6 +498,7 @@ public:
 
   bool isInterpretedEquality(Literal* lit);
   bool isInterpretedPredicate(Literal* lit, Interpretation itp);
+  bool isInterpretedPredicate(unsigned f, Interpretation itp);
   bool isInterpretedPredicate(Literal* lit);
 
   bool isInterpretedFunction(unsigned func);

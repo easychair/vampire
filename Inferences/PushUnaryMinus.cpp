@@ -23,7 +23,7 @@ enum class UMinus {
   None,
 };
 
-ostream& operator<<(ostream& out, UMinus const& self) {
+std::ostream& operator<<(std::ostream& out, UMinus const& self) {
   switch(self) {
     case UMinus::Int: return out << "UMinus::Int";
     case UMinus::Rat: return out << "UMinus::Rat";

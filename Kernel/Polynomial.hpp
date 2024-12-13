@@ -1049,7 +1049,7 @@ TermList Polynom<Number>::denormalize(TermList* results) const
       return c;
     } else {
       auto mon = monom.factors->denormalize(t);
-      if (monom.numeral == Number::oneC) {
+      if (monom.numeral == Number::constant(1)) {
         return mon;
       } else if (monom.numeral == Number::constant(-1)) {
         return Number::minus(mon);

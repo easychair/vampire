@@ -98,7 +98,7 @@ public:
   {
     static Stack<Literal*> st;
     st.reset();
-    st.loadFromIterator(litit);
+    st.loadFromIterator(std::move(litit));
     return fromStack(st, inf);
   }
 
@@ -138,6 +138,8 @@ public:
   std::string toString() const;
   std::string toTPTPString() const;
   std::string toNiceString() const;
+
+  friend std::ostream& operator<<(std::ostream& out, Clause const& self);
 
   /** Return the clause store */
   Store store() const { return _store; }
@@ -244,7 +246,7 @@ public:
   bool isPropositional();
   bool isHorn();
 
-  VirtualIterator<unsigned> getVariableIterator();
+  VirtualIterator<unsigned> getVariableIterator() const;
 
   bool contains(Literal* lit);
 #if VDEBUG

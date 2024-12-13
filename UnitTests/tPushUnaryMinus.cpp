@@ -45,7 +45,7 @@ public:
     return pum.simplify(in);
   }
 
-  virtual bool eq(Kernel::Clause const* lhs, Kernel::Clause const* rhs) const  override
+  virtual bool eq(Kernel::Clause* lhs, Kernel::Clause* rhs) const  override
   { return TestUtils::eqModAC(lhs, rhs); }
 };
 

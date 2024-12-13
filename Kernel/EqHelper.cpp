@@ -431,7 +431,7 @@ std::pair<VirtualIterator<TypedTermList>,bool> EqHelper::getDemodulationLHSItera
       return { withEqualitySort(lit, getSingletonIterator(t1) ), isPreordered };
     //there should be no equality literals of equal terms
     case Ordering::EQUAL:
-      ASSERTION_VIOLATION;
+      ASSERTION_VIOLATION_REP(*lit);
     }
     return { VirtualIterator<TypedTermList>::getEmpty(), isPreordered };
   } else {

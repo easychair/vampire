@@ -35,7 +35,7 @@ void __check(const char* operation, Idx& tree, Key key, Stack<Data> expected, It
   } else {
     std::cout << std::endl;
     std::cout << "[ FAIL ] " << operation << " " << pretty(key) << std::endl;
-    std::cout << "[  idx ] " << multiline(tree) << std::endl;
+    std::cout << "[  idx ] " << Output::multiline(tree) << std::endl;
     std::cout << "[  key ] " << pretty(key) << std::endl;
     std::cout << "[   is ]" << is << std::endl;
     std::cout << "[  exp ]" << expected << std::endl;

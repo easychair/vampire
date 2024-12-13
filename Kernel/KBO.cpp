@@ -552,7 +552,7 @@ KboWeightMap<SigTraits> KBO::weightsFromFile(const Options& opts) const
   }
 
   return KboWeightMap<SigTraits> {
-    ._weights                = weights,
+    ._weights                = weights.clone(),
     ._introducedSymbolWeight = introducedWeight,
     ._specialWeights         = specialWeights,
   };
@@ -970,7 +970,7 @@ KboWeightMap<SigTraits> KboWeightMap<SigTraits>::fromSomeUnsigned(Extractor ex, 
   }
 
   return KboWeightMap {
-    ._weights                = weights,
+    ._weights                = weights.clone(),
     ._introducedSymbolWeight = 1,
     ._specialWeights         = KboSpecialWeights<SigTraits>::dflt(),
   };
@@ -1003,7 +1003,7 @@ KboWeightMap<FuncSigTraits> KboWeightMap<FuncSigTraits>::randomized(unsigned max
   }
 
   return KboWeightMap {
-    ._weights                = weights,
+    ._weights                = weights.clone(),
     ._introducedSymbolWeight = introducedWeight,
     ._specialWeights         = KboSpecialWeights<FuncSigTraits> {
       ._variableWeight = variableWeight,
@@ -1072,7 +1072,7 @@ void showSpecialWeights(const KboSpecialWeights<FuncSigTraits>& ws, ostream& out
   out << "% " SPECIAL_WEIGHT_IDENT_NUM_INT    " " << ws._numInt                 << std::endl;
 }
 template<class SigTraits>
-void KBO::showConcrete_(ostream& out) const  
+void KBO::showConcrete_(std::ostream& out) const  
 {
   out << "% Weights of " << SigTraits::symbolKindName() << " (line format: `<name> <arity> <weight>`)" << std::endl;
   out << "% ===== begin of " << SigTraits::symbolKindName() << " weights ===== " << std::endl;
@@ -1096,7 +1096,7 @@ void KBO::showConcrete_(ostream& out) const
   out << "% ===== end of " << SigTraits::symbolKindName() << " weights ===== " << std::endl;
 
 }
-void KBO::showConcrete(ostream& out) const  
+void KBO::showConcrete(std::ostream& out) const  
 {
   showConcrete_<FuncSigTraits>(out);
 #if __KBO__CUSTOM_PREDICATE_WEIGHTS__

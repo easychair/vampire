@@ -42,7 +42,7 @@ MainLoopResult Z3MainLoop::runImpl()
   }
 
   SAT2FO s2f;
-  Z3Interfacing solver(_opt,s2f, /* unsat core */ false, /* export smtlib problem */ "");
+  Z3Interfacing solver(_opt,s2f, /* unsat core */ false, /* export smtlib problem */ "", Shell::Options::ProblemExportSyntax::SMTLIB);
 
  ClauseIterator cit(_prb.clauseIterator());
  while(cit.hasNext()){

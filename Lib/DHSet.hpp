@@ -138,14 +138,16 @@ public:
     return _map.domain();
   }
 
+  auto iter() const { return iterator(); }
+
   friend std::ostream& operator<<(std::ostream& out, DHSet const& self) 
   {
-    auto iter = self.iterator();
+    auto iter = self._map.items();
     out << "{";
     if (iter.hasNext()) {
-      out << iter.next();
+      out << iter.next().first;
       while (iter.hasNext()) {
-        out << ", " << iter.next();
+        out << ", " << iter.next().first;
       }
     }
     return out << "}";

@@ -18,10 +18,10 @@
 #include "KBO.hpp"
 #include "SubstHelper.hpp"
 
-#include <deque>
-
 #include "OrderingComparator.hpp"
 #include "OrderingConstraints/LinearConstraint.hpp"
+
+#include <deque>
 
 using namespace std;
 
@@ -30,8 +30,8 @@ namespace Kernel {
 std::ostream& operator<<(std::ostream& out, const OrderingComparator::BranchTag& t)
 {
   switch (t) {
-    case OrderingComparator::BranchTag::T_RESULT:
-      out << "r";
+    case OrderingComparator::BranchTag::T_DATA:
+      out << "d";
       break;
     case OrderingComparator::BranchTag::T_TERM:
       out << "t";
@@ -47,8 +47,8 @@ std::ostream& operator<<(std::ostream& out, const OrderingComparator::Node& node
 {
   out << (OrderingComparator::BranchTag)node.tag << (node.ready?" ":"? ");
   switch (node.tag) {
-    case OrderingComparator::BranchTag::T_RESULT: {
-      out << node.result;
+    case OrderingComparator::BranchTag::T_DATA: {
+      out << node.data;
       break;
     }
     case OrderingComparator::BranchTag::T_POLY: {
@@ -107,10 +107,14 @@ std::ostream& operator<<(std::ostream& str, const OrderingComparator& comp)
     }
     str << *kv.first->node() << std::endl;
     if (seen.insert(kv.first->node())) {
-      if (kv.first->node()->tag!=OrderingComparator::BranchTag::T_RESULT) {
+      if (kv.first->node()->tag==OrderingComparator::BranchTag::T_DATA) {
+        if (kv.first->node()->data) {
+          todo.push(std::make_pair(&kv.first->node()->alternative,kv.second+1));
+        }
+      } else {
         todo.push(std::make_pair(&kv.first->node()->ngeBranch,kv.second+1));
-        todo.push(std::make_pair(&kv.first->node()->eqBranch,kv.second+1));
         todo.push(std::make_pair(&kv.first->node()->gtBranch,kv.second+1));
+        todo.push(std::make_pair(&kv.first->node()->eqBranch,kv.second+1));
       }
     }
   }
@@ -199,16 +203,17 @@ std::string OrderingComparator::to_dot() const
       style += "processed,";
     }
     switch (n->tag) {
-      case BranchTag::T_RESULT: {
-        if (!n->result) {
+      case BranchTag::T_DATA: {
+        auto alt = n->alternative.node();
+        if (!alt) {
           // do not output anything for the fail node
           style += "sinknode,";
           label += "";
           break;
         }
         style += "datanode,";
-        label += Int::toString((unsigned long)n->result);
-        // edges += getBranch(id, alt, EdgeTag::ALT);
+        label += Int::toString((unsigned long)n->data);
+        edges += getBranch(id, alt, EdgeTag::ALT);
         break;
       }
       case BranchTag::T_TERM: {
@@ -262,24 +267,28 @@ std::string OrderingComparator::to_dot() const
 }
 
 OrderingComparator::OrderingComparator(const Ordering& ord)
-: _ord(ord), _source(false), _fail(_source), _curr(&_source), _prev(nullptr)
+: _ord(ord), _source(nullptr, Branch()), _sink(_source), _curr(&_source), _prev(nullptr)
 {
+  _sink.node()->ready = true;
 }
 
 OrderingComparator::~OrderingComparator() = default;
 
-bool OrderingComparator::check(const SubstApplicator* applicator)
+void* OrderingComparator::next(const SubstApplicator* applicator)
 {
-  _curr = &_source;
-  _prev = nullptr;
   ASS(_curr);
   for (;;) {
     expand();
     auto node = _curr->node();
     ASS(node->ready);
 
-    if (node->tag == BranchTag::T_RESULT) {
-      return node->result;
+    if (node->tag == BranchTag::T_DATA) {
+      if (!node->data) {
+        return nullptr;
+      }
+      _prev = _curr;
+      _curr = &node->alternative;
+      return node->data;
     }
 
     Ordering::Result comp = Ordering::INCOMPARABLE;
@@ -336,32 +345,33 @@ loop_end:
     _prev = _curr;
     _curr = &node->getBranch(comp);
   }
-  ASSERTION_VIOLATION;
+  return nullptr;
 }
 
-void OrderingComparator::insert(const OrderingConstraints& ordCons)
+void OrderingComparator::insert(const Stack<Ordering::Constraint>& comps, void* result)
 {
+  ASS(result);
   static Ordering::Result ordVals[] = { Ordering::EQUAL, Ordering::GREATER, Ordering::INCOMPARABLE };
   // we mutate current fail node and add a new one
-  // cout << "before " << *this << endl;
-  auto curr = &_fail;
-  Branch newFail(false);
+  auto curr = &_sink;
+  Branch newFail(nullptr, Branch());
+  newFail.node()->ready = true;
 
   curr->node()->~Node();
   curr->node()->ready = false;
 
-  if (ordCons.isNonEmpty()) {
+  if (comps.isNonEmpty()) {
     curr->node()->tag = T_TERM;
-    curr->node()->lhs = ordCons[0].lhs;
-    curr->node()->rhs = ordCons[0].rhs;
+    curr->node()->lhs = comps[0].lhs;
+    curr->node()->rhs = comps[0].rhs;
     for (unsigned i = 0; i < 3; i++) {
-      if (ordVals[i] != ordCons[0].rel) {
+      if (ordVals[i] != comps[0].rel) {
         curr->node()->getBranch(ordVals[i]) = newFail;
       }
     }
-    curr = &curr->node()->getBranch(ordCons[0].rel);
-    for (unsigned i = 1; i < ordCons.size(); i++) {
-      auto [lhs,rhs,rel] = ordCons[i];
+    curr = &curr->node()->getBranch(comps[0].rel);
+    for (unsigned i = 1; i < comps.size(); i++) {
+      auto [lhs,rhs,rel] = comps[i];
       *curr = OrderingComparator::Branch(lhs, rhs);
       for (unsigned i = 0; i < 3; i++) {
         if (ordVals[i] != rel) {
@@ -370,16 +380,14 @@ void OrderingComparator::insert(const OrderingConstraints& ordCons)
       }
       curr = &curr->node()->getBranch(rel);
     }
-    *curr = Branch(true);
+    *curr = Branch(result, newFail);
   } else {
-    curr->node()->tag = T_RESULT;
-    curr->node()->result = true;
-    curr->node()->ready = true;
+    curr->node()->tag = T_DATA;
+    curr->node()->data = result;
+    curr->node()->alternative = newFail;
   }
 
-  _fail = newFail;
-  ASS(_fail.node()->ready);
-  ASS(!_fail.node()->result);
+  _sink = newFail;
 }
 
 void OrderingComparator::expand()
@@ -389,18 +397,19 @@ void OrderingComparator::expand()
   {
     auto node = _curr->node();
 
-    ASS_NEQ(node->tag, BranchTag::T_RESULT);
-
-    if (node->tag == BranchTag::T_POLY) {
+    if (node->tag == BranchTag::T_DATA) {
+      ASS(node->data); // no fail nodes here
       // if refcnt > 1 we copy the node and
       // we can also safely use the original
       if (node->refcnt > 1) {
-        *_curr = Branch(node->poly);
-        _curr->node()->gtBranch = node->gtBranch;
-        _curr->node()->eqBranch = node->eqBranch;
-        _curr->node()->ngeBranch = node->ngeBranch;
+        *_curr = Branch(node->data, node->alternative);
       }
-
+      _curr->node()->trace = getCurrentTrace();
+      _curr->node()->prevPoly = getPrevPoly();
+      _curr->node()->ready = true;
+      return;
+    }
+    if (node->tag == BranchTag::T_POLY) {
       processPolyCase();
       continue;
     }
@@ -439,15 +448,6 @@ void OrderingComparator::processPolyCase()
   auto node = _curr->node();
   auto trace = getCurrentTrace();
 
-  // If this happens this branch is invalid.
-  // Since normal execution cannot reach it,
-  // we can put a "success" here to make things
-  // easier in subsumption/simplification.
-  if (!trace) {
-    *_curr = Branch(true);
-    return;
-  }
-
   unsigned pos = 0;
   unsigned neg = 0;
 
@@ -481,19 +481,34 @@ void OrderingComparator::processPolyCase()
 
 
   auto constant = node->poly->constant;
-  // if (constant == 0 && pos == 0 && neg == 0) {
-  //   *_curr = node->eqBranch;
-  //   return;
-  // }
-  // if (constant >= 0 && neg == 0) {
-  //   *_curr = node->gtBranch;
-  //   return;
-  // }
-  // if (constant <= 0 && pos == 0) {
-  //   *_curr = node->ngeBranch;
-  //   return;
-  // }
   const Polynomial* poly = Polynomial::get(constant, vcs);
+  auto prevPoly = getPrevPoly();
+
+  // check if we have seen this polynomial
+  // on the path leading here
+  auto polyIt = prevPoly;
+  while (polyIt.first) {
+    ASS_EQ(polyIt.first->tag, BranchTag::T_POLY);
+    if (polyIt.first->poly == poly) {
+      switch (polyIt.second) {
+        case Ordering::GREATER: {
+          *_curr = node->gtBranch;
+          return;
+        }
+        case Ordering::EQUAL: {
+          *_curr = node->eqBranch;
+          return;
+        }
+        case Ordering::INCOMPARABLE: {
+          *_curr = node->ngeBranch;
+          return;
+        }
+        default:
+          break;
+      }
+    }
+    polyIt = polyIt.first->prevPoly;
+  }
 
   // Linear Constraint Reasoner
   static Lib::LinearConstraint _lc;
@@ -520,21 +535,26 @@ void OrderingComparator::processPolyCase()
       ASSERTION_VIOLATION;
       break;
   }
+
+  // if refcnt > 1 we copy the node and
+  // we can also safely use the original
+  if (node->refcnt > 1) {
+    *_curr = Branch(node->poly);
+    _curr->node()->eqBranch = node->eqBranch;
+    _curr->node()->gtBranch = node->gtBranch;
+    _curr->node()->ngeBranch = node->ngeBranch;
+  }
+
+  _curr->node()->poly = poly;
+  _curr->node()->prevPoly = prevPoly;
+  _curr->node()->trace = trace;
+  _curr->node()->ready = true;
 }
 
 void OrderingComparator::processVarCase()
 {
   auto node = _curr->node();
   auto trace = getCurrentTrace();
-
-  // If this happens this branch is invalid.
-  // Since normal execution cannot reach it,
-  // we can put a "success" here to make things
-  // easier in subsumption/simplification.
-  if (!trace) {
-    *_curr = Branch(true);
-    return;
-  }
   Ordering::Result val;
   if (trace->get(node->lhs, node->rhs, val)) {
     if (val == Ordering::GREATER) {
@@ -555,12 +575,13 @@ void OrderingComparator::processVarCase()
     _curr->node()->ngeBranch = node->ngeBranch;
   }
   _curr->node()->ready = true;
+  _curr->node()->prevPoly = getPrevPoly();
   _curr->node()->trace = trace;
 }
 
 const OrderingComparator::Polynomial* OrderingComparator::Polynomial::get(int constant, const Stack<VarCoeffPair>& vcs)
 {
-  static Set<Polynomial*> polys;
+  static Set<Polynomial*, DerefPtrHash<DefaultHash>> polys;
 
   auto pos = iterTraits(Stack<VarCoeffPair>::ConstRefIterator(vcs)).filter([](const auto& vc) {
     return vc.second > 0;
@@ -576,23 +597,21 @@ const OrderingComparator::Polynomial* OrderingComparator::Polynomial::get(int co
     return vc1.first<vc2.first;
   });
 
+  Polynomial poly{ constant, pos, neg };
+  // The code below depends on the fact that the first argument
+  // is only called when poly is not used anymore, otherwise the
+  // move would give undefined behaviour.
   bool unused;
   return polys.rawFindOrInsert(
-    [&](){
-      auto p = new Polynomial();
-      p->constant = constant;
-      p->pos = std::move(pos);
-      p->neg = std::move(neg);
-      return p;
-    },
-    HashUtils::combine(DefaultHash::hash(constant), DefaultHash::hash(pos), DefaultHash::hash(neg)),
-    [&](Polynomial* p) { return p->constant == constant && p->pos == pos && p->neg == neg; },
+    [&](){ return new Polynomial(std::move(poly)); },
+    poly.defaultHash(),
+    [&](Polynomial* p) { return *p == poly; },
     unused);
 }
 
 const OrderingComparator::Trace* OrderingComparator::getCurrentTrace()
 {
-  ASS(!_curr->node()->ready || _curr->node() == _fail.node());
+  ASS(!_curr->node()->ready);
 
   if (!_prev) {
     return Trace::getEmpty(_ord);
@@ -615,12 +634,35 @@ const OrderingComparator::Trace* OrderingComparator::getCurrentTrace()
       }
       return Trace::set(_prev->node()->trace, { lhs, rhs, res });
     }
-    case BranchTag::T_RESULT:
+    case BranchTag::T_DATA:
     case BranchTag::T_POLY: {
       return _prev->node()->trace;
     }
   }
   ASSERTION_VIOLATION;
+}
+
+std::pair<OrderingComparator::Node*, Ordering::Result> OrderingComparator::getPrevPoly()
+{
+  auto res = make_pair((Node*)nullptr, Ordering::INCOMPARABLE);
+  if (_prev) {
+    // take value from previous node by default
+    res = _prev->node()->prevPoly;
+
+    // override value if the previous is a poly node 
+    if (_prev->node()->tag == BranchTag::T_POLY) {
+      res.first = _prev->node();
+      if (_curr == &_prev->node()->gtBranch) {
+        res.second = Ordering::GREATER;
+      } else if (_curr == &_prev->node()->eqBranch) {
+        res.second = Ordering::EQUAL;
+      } else {
+        ASS_EQ(_curr, &_prev->node()->ngeBranch);
+        res.second = Ordering::INCOMPARABLE;
+      }
+    }
+  }
+  return res;
 }
 
 OrderingComparator::Branch::~Branch()
@@ -659,8 +701,10 @@ OrderingComparator::Branch& OrderingComparator::Branch::operator=(Branch&& other
 
 OrderingComparator::Node::~Node()
 {
+  if (tag==T_DATA) {
+    alternative.~Branch();
+  }
   ready = false;
-  trace = nullptr;
 }
 
 void OrderingComparator::Node::incRefCnt()

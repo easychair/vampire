@@ -34,26 +34,27 @@ struct AnyOf
  * A Clause matches a pattern Clause, if they are equal.
  * A Clause matches an AnyOf pattern if it matches both of the subpatterns.
  */
-class ClausePattern : Coproduct<Kernel::Clause const*, AnyOf>
+class ClausePattern : Coproduct<Kernel::Clause*, AnyOf>
 {
+  using Copro =  Coproduct<Kernel::Clause*, AnyOf>;
 public:
-  ClausePattern(Kernel::Clause const* clause) 
-    : Coproduct<Kernel::Clause const*, AnyOf>(clause) {}
+  ClausePattern(Kernel::Clause* clause) 
+    : Copro(clause) {}
 
-  ClausePattern(ClausePattern l, ClausePattern r) : Coproduct<Kernel::Clause const*, AnyOf>(AnyOf {
+  ClausePattern(ClausePattern l, ClausePattern r) : Copro(AnyOf {
         std::make_unique<ClausePattern>(std::move(l)),
         std::make_unique<ClausePattern>(std::move(r))
       }) {}
 
   template<class EqualityOperator>
-  bool matches(EqualityOperator& equality, Kernel::Clause const* result);
+  bool matches(EqualityOperator& equality, Kernel::Clause* result);
   friend std::ostream& operator<<(std::ostream& out, ClausePattern const& self);
 };
 
 inline std::ostream& operator<<(std::ostream& out, ClausePattern const& self) 
 {
   return self.match(
-      [&](Kernel::Clause const* const& self) -> std::ostream&
+      [&](Kernel::Clause* const& self) -> std::ostream&
       { return out << pretty(self); },
 
       [&](AnyOf const& self)  -> std::ostream&
@@ -61,21 +62,21 @@ inline std::ostream& operator<<(std::ostream& out, ClausePattern const& self)
 }
 
 template<class EqualityOperator>
-bool ClausePattern::matches(EqualityOperator& equality, Kernel::Clause const* result)
+bool ClausePattern::matches(EqualityOperator& equality, Kernel::Clause* result)
 {
   return match(
-      [&](Kernel::Clause const*& self) 
+      [&](Kernel::Clause* self) 
       { return equality.eq(result, self); },
 
       [&](AnyOf& self) 
       { return self.lhs->matches(equality, result) || self.rhs->matches(equality, result); });
 }
 
-inline ClausePattern anyOf(Kernel::Clause const* lhs) 
+inline ClausePattern anyOf(Kernel::Clause* lhs) 
 { return ClausePattern(lhs); }
 
 template<class... As>
-inline ClausePattern anyOf(Kernel::Clause const* lhs, Kernel::Clause const* rhs, As... rest) 
+inline ClausePattern anyOf(Kernel::Clause* lhs, Kernel::Clause* rhs, As... rest) 
 { return ClausePattern(lhs, anyOf(rhs, rest...)); }
 
 

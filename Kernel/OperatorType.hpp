@@ -189,6 +189,9 @@ public:
     return (*_key)[arity() - numTypeArguments()];
   }
 
+  friend std::ostream& operator<<(std::ostream& out, OperatorType const& self)
+  { return out << self.toString(); }
+
   std::string toString() const;
 
   bool isSingleSortType(TermList sort) const;

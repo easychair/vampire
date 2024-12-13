@@ -89,7 +89,7 @@ Clause* GlobalSubsumption::perform(Clause* cl, Stack<Unit*>& prems)
     return cl;
   }
 
-  Grounder& grounder = _index->getGrounder();
+  GlobalSubsumptionGrounder &grounder = _index->getGrounder();
 
   // SAT literals of the prop. abstraction of cl
   static SATLiteralStack plits;

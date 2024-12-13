@@ -343,7 +343,26 @@ void Debug::Assertion::violatedMethod(const char* file, int line, const T& obj,
 #endif // VDEBUG
 
 /** expression version of ASSERTION_VIOLATION */
-template<class T> T assertionViolation() 
+template<class T> T assertionViolation()
 { ASSERTION_VIOLATION }
 
+#if defined(__clang__)
+#  define __ALLOW_UNUSED(...)                                                             \
+    _Pragma("GCC diagnostic push")                                                        \
+    _Pragma("GCC diagnostic ignored \"-Wunused\"")                                        \
+    __VA_ARGS__                                                                           \
+    _Pragma("GCC diagnostic pop")                                                         \
+
+#elif defined(__GNUC__) || defined(__GNUG__)
+
+#  define __ALLOW_UNUSED(...)                                                             \
+    _Pragma("GCC diagnostic push")                                                        \
+    _Pragma("GCC diagnostic ignored \"-Wunused-but-set-variable\"")                       \
+    __VA_ARGS__                                                                           \
+    _Pragma("GCC diagnostic pop")                                                         \
+
+#else
+#  define __ALLOW_UNUSED(...) __VA_ARGS__
+#endif
+ 
 #endif // __Assertion__

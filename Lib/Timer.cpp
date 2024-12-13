@@ -55,7 +55,10 @@ enum LimitType {
 };
 
 // ensures that exactly one of the timer thread and the parent process tries to exit
-static std::mutex EXIT_LOCK;
+// (the recursive bit allows us to be overprotective
+// and call disableLimitEnforcement more than once (from the main thread)
+// without the consequence of locking ourselves)
+static std::recursive_mutex EXIT_LOCK;
 
 // called by timer_thread to exit the entire process
 // functions called here should be thread-safe
@@ -138,9 +141,9 @@ namespace Timer {
 void reinitialise() {
   // might (probably have) locked this in the parent process, release it for the child
   //
-  // I am not sure of the semantics of placement-new for std::mutex,
+  // I am not sure of the semantics of placement-new for std::recursive_mutex,
   // but nobody else seems to be either - if you know, tell me! - Michael
-  ::new (&EXIT_LOCK) std::mutex;
+  ::new (&EXIT_LOCK) std::recursive_mutex;
 
   START_TIME = std::chrono::steady_clock::now();
 

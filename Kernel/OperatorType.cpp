@@ -137,7 +137,7 @@ std::string OperatorType::argsToString() const
 {
   unsigned ar = arity();
   ASS(ar);
-  std::string res =  ar > 1 ? "(" : "";  
+  std::string res = ar > 1 ? "(" : "";
   for (unsigned i = _typeArgsArity; i < ar; i++) {
     res += arg(i).toString();
     if (i != ar-1) {
