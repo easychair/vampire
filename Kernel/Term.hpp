@@ -29,7 +29,7 @@
 #ifndef __Term__
 #define __Term__
 
-#include "Debug/Output.hpp"
+#include "Lib/Output.hpp"
 #include "Forwards.hpp"
 #include "Debug/Assertion.hpp"
 
@@ -92,6 +92,18 @@ enum ArgumentOrderVals {
   AO_INCOMPARABLE=4,
 };
 
+inline std::ostream& operator<<(std::ostream& out, ArgumentOrderVals const& self)
+{ 
+  switch(self) {
+    case AO_UNKNOWN: return out << "UNKNOWN";
+    case AO_GREATER: return out << "GREATER";
+    case AO_LESS: return out << "LESS";
+    case AO_EQUAL: return out << "EQUAL";
+    case AO_INCOMPARABLE: return out << "INCOMPARABLE";
+  }
+  ASSERTION_VIOLATION
+}
+
 enum class TermKind : unsigned {
   LITERAL,
   TERM,
@@ -107,7 +119,6 @@ struct SymbolId {
   friend bool operator<(SymbolId const& l, SymbolId const& r) 
   { return std::tie(l.functor, l.kind) < std::tie(r.functor, r.kind); }
 };
-
 
 /**
  * Class containing either a pointer to a compound term or
@@ -182,7 +193,7 @@ public:
   unsigned defaultHash() const { return DefaultHash::hash(content()); }
   unsigned defaultHash2() const { return content(); }
 
-  std::string toString(bool topLevel = true) const;
+  std::string toString(bool needsPar = false) const;
 
   friend std::ostream& operator<<(std::ostream& out, Kernel::TermList const& tl);
   /** make the term into an ordinary variable with a given number */
@@ -1063,6 +1074,32 @@ public:
   /** set polarity to true or false */
   void setPolarity(bool positive)
   { _args[0]._setPolarity(positive); }
+
+  TermList eqArgSort() const;
+  
+  // prevent bugs through implicit bool <-> unsigned conversions
+  template<class Iter> static Literal* createFromIter(unsigned predicate, unsigned polarity, Iter iter) = delete;
+  template<class Iter> static Literal* createFromIter(    bool predicate, unsigned polarity, Iter iter) = delete;
+  template<class Iter> static Literal* createFromIter(    bool predicate,     bool polarity, Iter iter) = delete;
+
+  template<class Iter>
+  static Literal* createFromIter(unsigned predicate, bool polarity, Iter iter) {
+    RStack<TermList> args;
+    while (iter.hasNext()) {
+      args->push(iter.next());
+    }
+    return Literal::create(predicate, args->size(), polarity, args->begin());
+  }
+
+  template<class Iter>
+  static Literal* createFromIter(Literal* lit, Iter iter) {
+    if (lit->isEquality()) {
+      return  Literal::createEquality(lit->polarity(), iter.tryNext().unwrap(), iter.tryNext().unwrap(), lit->eqArgSort());
+    } else {
+      return Literal::createFromIter(lit->functor(), bool(lit->polarity()), std::move(iter));
+    }
+  }
+
   static Literal* create(unsigned predicate, unsigned arity, bool polarity, TermList* args);
   static Literal* create(unsigned predicate, bool polarity, std::initializer_list<TermList>);
   static Literal* create(Literal* l,bool polarity);

@@ -165,7 +165,7 @@ bool TestUnit::runTestsWithNameSubstring(std::string const& pref, ostream& out)
   return cnt_fail == 0;
 }
 
-bool TestUnit::run(ostream& out)
+bool TestUnit::run(std::ostream& out)
 { return runTestsWithNameSubstring("", out); }
 
 void TestUnit::add(Test t)
@@ -215,7 +215,7 @@ bool UnitTesting::add(std::string const& testUnit, TestUnit::Test test)
   return true;
 }
 
-std::ostream& operator<<(ostream& out, TestUnit::Test const& t) 
+std::ostream& operator<<(std::ostream& out, TestUnit::Test const& t) 
 { return out << t.name; }
 
 } // namespace Test

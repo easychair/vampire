@@ -8,6 +8,7 @@
  * and in the source directory
  */
 #include "Test/UnitTesting.hpp"
+#include "Test/TestUtils.hpp"
 #include "Test/SyntaxSugar.hpp"
 #include "Indexing/TermSharing.hpp"
 #include "Inferences/GaussianVariableElimination.hpp"
@@ -22,6 +23,7 @@
 #include "Test/SimplificationTester.hpp"
 #include "Test/GenerationTester.hpp"
 #include "Kernel/KBO.hpp"
+#include "Lib/Output.hpp"
 
 using namespace std;
 using namespace Kernel;
@@ -65,9 +67,9 @@ public:
 
   /** 
    * OPTIONAL: override how equality between clauses is checked. 
-   * Defaults to TestUtils::eqModAC(Clause const*, Clause const*).
+   * Defaults to TestUtils::eqModAC(Clause*, Clause*).
    */
-  virtual bool eq(Kernel::Clause const* lhs, Kernel::Clause const* rhs) const override
+  virtual bool eq(Kernel::Clause* lhs, Kernel::Clause* rhs) const override
   {
     return TestUtils::eqModAC(lhs, rhs);
   }
@@ -160,10 +162,10 @@ TEST_SIMPLIFY(gve_test_div,
 /////////////////////////////////////
 
 
-REGISTER_GEN_TESTER(LfpRule<GaussianVariableElimination>)
+REGISTER_GEN_TESTER(Test::Generation::GenerationTester<LfpRule<GaussianVariableElimination>>(LfpRule<GaussianVariableElimination>()))
 
 TEST_GENERATION(test_redundancy_01,
-    Generation::TestCase()
+    Generation::AsymmetricTest()
       .input(    clause({  x != 4, p(x)  }))
       .expected(exactly(
             clause({  p(4)  })
@@ -172,7 +174,7 @@ TEST_GENERATION(test_redundancy_01,
     )
 
 TEST_GENERATION(test_redundancy_02,
-    Generation::TestCase()
+    Generation::AsymmetricTest()
       .input(     clause({  x != 4, p(y)  }))
       .expected( exactly(
             clause({  p(y)  })
@@ -181,7 +183,7 @@ TEST_GENERATION(test_redundancy_02,
     )
 
 TEST_GENERATION(test_redundancy_03,
-    Generation::TestCase()
+    Generation::AsymmetricTest()
       .input(     clause({   x != 4, p(y), q(x)  }))
       .expected( exactly(
             clause({  p(y), q(4)  })
@@ -190,7 +192,7 @@ TEST_GENERATION(test_redundancy_03,
     )
 
 TEST_GENERATION(test_redundancy_04,
-    Generation::TestCase()
+    Generation::AsymmetricTest()
       .input(     clause({   x != 4, p(x), q(x)  }))
       .expected( exactly(
             clause({  p(4), q(4)  })
@@ -199,7 +201,7 @@ TEST_GENERATION(test_redundancy_04,
     )
 
 TEST_GENERATION(test_redundancy_05,
-    Generation::TestCase()
+    Generation::AsymmetricTest()
       .input(     clause({   x != 4, p(y), q(y)  }))
       .expected( exactly(
             clause({  p(y), q(y)  })
@@ -209,7 +211,7 @@ TEST_GENERATION(test_redundancy_05,
 
 
 TEST_GENERATION(test_redundancy_06,
-    Generation::TestCase()
+    Generation::AsymmetricTest()
       .input(     clause({  y != 5, x != 4, p(x), q(y)  }))
       .expected( exactly(
             clause({  p(4), q(5)  })

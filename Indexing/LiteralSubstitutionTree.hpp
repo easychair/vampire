@@ -132,15 +132,15 @@ public:
     }
     return out << "} ";
   }
-  friend std::ostream& operator<<(std::ostream& out, OutputMultiline<LiteralSubstitutionTree> const& self)
+  friend std::ostream& operator<<(std::ostream& out, Output::Multiline<LiteralSubstitutionTree> const& self)
   { 
     int i = 0;
     out << "{ " << std::endl;
     for (auto& t : self.self._trees) {
       if (!t->isEmpty()) {
         auto f = env.signature->getPredicate(idxToFunctor(i));
-        OutputMultiline<LiteralSubstitutionTree>::outputIndent(out, self.indent);
-        out << (idxIsNegative(i) ? "~" : " ") << *f << "(" << multiline(*t, self.indent + 1) << ")" << std::endl; 
+        Output::Multiline<LiteralSubstitutionTree>::outputIndent(out, self.indent);
+        out << (idxIsNegative(i) ? "~" : " ") << *f << "(" << Output::multiline(*t, self.indent + 1) << ")" << std::endl; 
       }
       i++;
     }
@@ -149,7 +149,7 @@ public:
 
   virtual void output(std::ostream& out, Option<unsigned> multilineIndent) const override {
     if (multilineIndent) {
-      out << multiline(*this, *multilineIndent);
+      out << Output::multiline(*this, *multilineIndent);
     } else {
       out << *this;
     }

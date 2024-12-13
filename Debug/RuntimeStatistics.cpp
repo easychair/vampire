@@ -26,7 +26,7 @@ namespace Debug
 
 using namespace std;
 
-void RSMultiCounter::print(ostream& out)
+void RSMultiCounter::print(std::ostream& out)
 {
   out << "% " << name() << ":"<< endl;
   for(size_t i=0;i<_counters.size();i++) {
@@ -43,7 +43,7 @@ RSMultiStatistic::~RSMultiStatistic()
   }
 }
 
-void RSMultiStatistic::print(ostream& out)
+void RSMultiStatistic::print(std::ostream& out)
 {
   out << "% " << name() << ":"<< endl;
   for(size_t i=0;i<_values.size();i++) {
@@ -95,7 +95,7 @@ RuntimeStatistics::~RuntimeStatistics()
   }
 }
 
-void RuntimeStatistics::print(ostream& out)
+void RuntimeStatistics::print(std::ostream& out)
 {
   out<<"% ----  Runtime statistics ----"<<endl;
 

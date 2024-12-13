@@ -41,7 +41,7 @@ namespace Shell
 {
 
 using namespace std;
-TPTPPrinter::TPTPPrinter(ostream* tgtStream)
+TPTPPrinter::TPTPPrinter(std::ostream* tgtStream)
 : _tgtStream(tgtStream), _headersPrinted(false)
 {
 }
@@ -316,7 +316,7 @@ void TPTPPrinter::ensureHeadersPrinted(Unit* u)
 /**
  * Retrieve the output stream to which vampire prints out
  */
-ostream& TPTPPrinter::tgt()
+std::ostream& TPTPPrinter::tgt()
 {
   if(_tgtStream) {
     return *_tgtStream;

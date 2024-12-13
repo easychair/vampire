@@ -380,6 +380,12 @@ void Options::init()
     _timeStatistics.description="Show how much running time was spent in each part of Vampire";
     _lookup.insert(&_timeStatistics);
     _timeStatistics.tag(OptionTag::OUTPUT);
+
+    _timeStatisticsFocus = StringOptionValue("time_statistics_focus","tstat_focus","");
+    _timeStatisticsFocus.description="focus on some special subtree of the time statistics";
+    _lookup.insert(&_timeStatisticsFocus);
+    _timeStatisticsFocus.tag(OptionTag::OUTPUT);
+    _timeStatisticsFocus.onlyUsefulWith(_timeStatistics.is(equal(true)));
 #endif // VTIME_PROFILING
 
 //*********************** Input  ***********************
@@ -702,6 +708,12 @@ void Options::init()
     _showZ3.description="Print the clauses being added to Z3";
     _lookup.insert(&_showZ3);
     _showZ3.tag(OptionTag::DEVELOPMENT);
+
+    _problemExportSyntax = ChoiceOptionValue<ProblemExportSyntax>("export_syntax","",ProblemExportSyntax::SMTLIB, {"smtlib", "api_calls",});
+    _problemExportSyntax.description="Set the syntax for exporting z3 problems.";
+    _lookup.insert(&_problemExportSyntax);
+    _problemExportSyntax.tag(OptionTag::DEVELOPMENT);
+    _problemExportSyntax.reliesOn(Or(_exportAvatarProblem.is(notEqual(std::string(""))), _exportThiProblem.is(notEqual(std::string("")))));
 
     _exportAvatarProblem = StringOptionValue("export_avatar","","");
     _exportAvatarProblem.description="Export the avatar problems to solve in smtlib syntax.";
@@ -2578,7 +2590,7 @@ std::string Options::includeFileName (const std::string& relativeName)
  * @since 27/11/2003 Manchester, changed using new XML routines and iterator
  *        of options
  */
-void Options::output (ostream& str) const
+void Options::output (std::ostream& str) const
 {
   if(printAllTheoryAxioms()){
     cout << "Sorry, not implemented yet!" << endl;
@@ -2707,7 +2719,7 @@ void Options::output (ostream& str) const
     //str << "======= End of options =======\n";
   }
 
-} // Options::output (ostream& str) const
+} // Options::output (std::ostream& str) const
 
 template<typename T>
 bool Options::OptionValue<T>::checkProblemConstraints(Property* prop){
@@ -3817,4 +3829,21 @@ std::vector<float> Options::positiveLiteralSplitQueueCutoffs() const
   }
 
   return cutoffs;
+}
+
+Stack<std::string> Options::getSimilarOptionNames(std::string name, bool is_short) const {
+
+  Stack<std::string> similar_names;
+
+  VirtualIterator<AbstractOptionValue*> options = _lookup.values();
+  while(options.hasNext()){
+    AbstractOptionValue* opt = options.next();
+    std::string opt_name = is_short ? opt->shortName : opt->longName;
+    size_t dif = 2;
+    if(!is_short) dif += name.size()/4;
+    if(name.size()!=0 && StringUtils::distance(name,opt_name) < dif)
+      similar_names.push(opt_name);
+  }
+
+  return similar_names;
 }

@@ -77,8 +77,8 @@ private:
 
   friend std::ostream& operator<<(std::ostream& out, TermSubstitutionTree const& self)
   { return out << self._inner; }
-  friend std::ostream& operator<<(std::ostream& out, OutputMultiline<TermSubstitutionTree> const& self)
-  { return out << multiline(self.self._inner, self.indent); }
+  friend std::ostream& operator<<(std::ostream& out, Output::Multiline<TermSubstitutionTree> const& self)
+  { return out << Output::multiline(self.self._inner, self.indent); }
 
 public:
   VirtualIterator<Indexing::QueryRes<ResultSubstitutionSP, LeafData_>> getInstances(TypedTermList t, bool retrieveSubstitutions) final override

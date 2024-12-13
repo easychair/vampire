@@ -15,9 +15,10 @@
  * @since 06/05/2007 Manchester, changed into a single class instead of three
  */
 
-#include "Debug/Output.hpp"
+#include "Lib/Output.hpp"
 #include "Indexing/TermSharing.hpp"
 #include "Lib/Metaiterators.hpp"
+#include "Lib/StringUtils.hpp"
 
 #include "SubstHelper.hpp"
 #include "TermIterators.hpp"
@@ -108,9 +109,6 @@ void Term::destroyNonShared()
   }
 }
 
-bool TermList::ground() const
-{ return isTerm() && term()->ground(); }
-
 /**
  * Return true if the term does not contain any unshared proper term.
  *
@@ -121,6 +119,9 @@ bool TermList::isSafe() const
 {
   return isVar() || term()->shared();
 }
+
+bool TermList::ground() const 
+{ return isTerm() && term()->ground(); }
 
 /**
  * Return true if @b ss and @b tt have the same top symbols, that is,
@@ -678,13 +679,76 @@ std::string Term::toString(bool topLevel) const
     printArgs = isSort() || env.signature->getFunction(_functor)->combinator() == Signature::NOT_COMB;
   }
 
-  std::string s = headToString();
+#if NICE_THEORY_OUTPUT
+  auto theoryTerm = Kernel::tryNumTraits([&](auto numTraits) {
+    using NumTraits = decltype(numTraits);
+    auto uminus = [&]()  {
+    std::stringstream out;
+      auto maybePar = [&](auto t) { 
+        auto needsPar = t.isTerm() && NumTraits::isAdd(t.term()->functor());
+        return t.toString(!needsPar);
+      };
+      out << "-" << maybePar(termArg(0));
+      return Option<std::string>(out.str());
+    };
+    auto binary = [&](auto sym)  {
+      auto needsPar = !topLevel;
+      auto maybePar = [&](auto t) { 
+        return t.toString(
+            t.isTerm() && (
+              t.term()->functor() == _functor 
+              || (NumTraits::isAdd(_functor) && NumTraits::isMul(t.term()->functor()))
+              )
+            );
+      };
+      std::stringstream out;
+      out << (needsPar ? "(" : "");
+      out << maybePar(termArg(0)) << sym << maybePar(termArg(1));
+      out << (needsPar ? ")" : "");
+      return Option<std::string>(out.str());
+    };
+    if (isLiteral()) {
+      if (NumTraits::isGreater(_functor)) {
+        return binary(">");
+      } else if (NumTraits::isGeq(_functor)) {
+        return binary(">=");
+      }
+      /* nothing */
+    } else if (isSort()) {
+      /* nothing */
+    } else {
+      if (NumTraits::isAdd(_functor)) {
+        return binary(" + ");
+      } else if (NumTraits::isMul(_functor)) {
+        return binary(" ");
+      } else if (NumTraits::isFloor(_functor)) {
+        return some(outputToString("⌊", termArg(0), "⌋"));
+      } else if (NumTraits::isMinus(_functor)) {
+        return uminus();
+      }
+    }
+    /* this means we have an uninterpteted term which will be formatted as usual */
+    return Option<std::string>();
+  });
 
-  if (_arity && printArgs) {
-    s += args()->asArgsToString(); // will also print the ')'
+  if (theoryTerm.isSome()) {
+    return theoryTerm.unwrap();
   }
-  return s;
+#endif // NICE_THEORY_OUTPUT
+
+  std::stringstream out;
+  out << headToString();
+  
+  if (_arity && printArgs) {
+    out << Output::interleaved(',', anyArgIter(this)) << ")";
+  }
+  return out.str();
 } // Term::toString
+
+TermList Literal::eqArgSort() const {
+  ASS(isEquality())
+  return SortHelper::getEqualityArgumentSort(this);
+}
 
 /**
  * Return the result of conversion of a literal into a std::string.
@@ -713,6 +777,29 @@ std::string Literal::toString() const
 
     return res;
   }
+
+#if NICE_THEORY_OUTPUT
+  auto theoryTerm = Kernel::tryNumTraits([&](auto numTraits) {
+    auto binary = [&](auto sym)  {
+    std::stringstream out;
+      if (!polarity()) out << "~(" ;
+      out << *nthArgument(0) << " " << sym << " " << *nthArgument(1) ;
+      if (!polarity()) out << ")" ;
+      return Option<std::string>(out.str());
+    };
+    using NumTraits = decltype(numTraits);
+    if (_functor == NumTraits::greaterF()) {
+      return binary(">");
+    } else if (_functor == NumTraits::geqF()) {
+      return binary(">=");
+    }
+    return Option<std::string>();
+  });
+  if (theoryTerm.isSome()) {
+    return theoryTerm.unwrap();
+  }
+#endif // NICE_THEORY_OUTPUT
+
 
   Stack<const TermList*> stack(64);
   std::string s = polarity() ? "" : "~";
@@ -1608,7 +1695,7 @@ void TermList::assertValid() const
 
 #endif
 
-std::ostream& Kernel::operator<<(ostream& out, TermList const& tl)
+std::ostream& Kernel::operator<<(std::ostream& out, TermList const& tl)
 {
   if (tl.isEmpty()) {
     return out<<"<empty TermList>";
@@ -1619,11 +1706,11 @@ std::ostream& Kernel::operator<<(ostream& out, TermList const& tl)
   return out << *tl.term();
 }
 
-std::ostream& Kernel::operator<<(ostream& out, const Term& t)
+std::ostream& Kernel::operator<<(std::ostream& out, const Term& t)
 {
   return out<<t.toString();
 }
-std::ostream& Kernel::operator<<(ostream& out, const Literal& l)
+std::ostream& Kernel::operator<<(std::ostream& out, const Literal& l)
 {
   return out<<l.toString();
 }

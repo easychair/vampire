@@ -168,7 +168,7 @@ class ActiveClauseContainer
 : public RandomAccessClauseContainer
 {
 public:
-  ActiveClauseContainer(const Shell::Options& opt) {}
+  ActiveClauseContainer() {}
 
   void add(Clause* c) override;
   void remove(Clause* c) override;

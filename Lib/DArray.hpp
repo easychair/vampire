@@ -38,9 +38,6 @@ namespace Lib {
 template<typename C>
 class DArray
 {
-private:
-  //private and undefined operator= to avoid an implicitly generated one
-  DArray& operator=(const DArray&);
 public:
   USE_ALLOCATOR(DArray<C>);
 
@@ -64,7 +61,7 @@ public:
     }
   }
 
-  DArray(const DArray& o)
+  explicit DArray(const DArray& o)
     : _size(o.size()), _capacity(o.size())
   {
     if(_size==0) {
@@ -78,6 +75,8 @@ public:
     }
   }
 
+  DArray clone() const { return DArray(*this); }
+
   void swap(DArray& other) {
     std::swap(other._size, _size);
     std::swap(other._capacity, _capacity);
@@ -88,7 +87,6 @@ public:
 
   DArray(DArray&& other) : DArray() { swap(other); }
   DArray& operator=(DArray&& other) { swap(other); return *this; }
-
 
   /** Delete array */
   inline ~DArray()
@@ -303,6 +301,9 @@ public:
     }
   }
 
+  /**
+   * Creates an array initialized with all the elements of the iterator it.
+   */
   template<class It>
   static DArray fromIterator(It it, size_t count=0) {
     DArray out;

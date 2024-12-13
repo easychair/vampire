@@ -20,7 +20,7 @@
 #include "Forwards.hpp"
 
 #include "Lib/List.hpp"
-#include "Debug/Output.hpp"
+#include "Lib/Output.hpp"
 #include "Kernel/Inference.hpp"
 
 namespace Kernel {

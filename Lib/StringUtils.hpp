@@ -16,6 +16,7 @@
 #define __StringUtils__
 
 #include "DHMap.hpp"
+#include "Lib/Output.hpp"
 #include <cstdlib>
 
 namespace Lib {
@@ -41,6 +42,8 @@ public:
   template<class A>
   static A parse(std::string const& str)
   { return StringParser<A>{}(str); }
+
+  static size_t distance(const std::string &s1, const std::string &s2);
 };
 
 template<> struct StringParser<int>
@@ -55,6 +58,21 @@ template<> struct StringParser<float>
   float operator()(std::string const& str)
   { return atof(str.c_str()); }
 };
+
+template<class... Cs>
+std::string outputToString(Cs const&... xs) {
+  std::stringstream out;
+  out << Kernel::Output::cat(xs...);
+  return out.str();
+}
+
+// TODO deprecate
+template<class A>
+std::string toString(A const& a) {
+  std::stringstream out;
+  out << a;
+  return out.str();
+}
 
 
 

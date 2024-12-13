@@ -157,8 +157,8 @@ struct Top {};
 /** type to represent the bottom element in a lattice */
 struct Bot {};
 
-ostream& operator<<(ostream& out, Bot self) { return out << "bot"; }
-ostream& operator<<(ostream& out, Top self) { return out << "top"; }
+std::ostream& operator<<(std::ostream& out, Bot self) { return out << "bot"; }
+std::ostream& operator<<(std::ostream& out, Top self) { return out << "top"; }
 bool operator==(Top,Top) { return true; }
 bool operator==(Bot,Bot) { return true; }
 
@@ -285,7 +285,7 @@ public:
   A      & unwrap()
   { return _inner.template unwrap<A>(); }
 
-  friend ostream& operator<<(ostream& out, FlatMeetLattice const& self) 
+  friend std::ostream& operator<<(std::ostream& out, FlatMeetLattice const& self) 
   { return out << self._inner; }
 
 private:

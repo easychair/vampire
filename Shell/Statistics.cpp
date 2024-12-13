@@ -184,7 +184,7 @@ Statistics::Statistics()
 {
 } // Statistics::Statistics
 
-void Statistics::explainRefutationNotFound(ostream& out)
+void Statistics::explainRefutationNotFound(std::ostream& out)
 {
   // should be a one-liner for each case!
   if (discardedNonRedundantClauses) {
@@ -204,7 +204,7 @@ void Statistics::explainRefutationNotFound(ostream& out)
   }
 }
 
-void Statistics::print(ostream& out)
+void Statistics::print(std::ostream& out)
 {
   if (env.options->statistics() != Options::Statistics::NONE) {
 

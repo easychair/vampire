@@ -159,7 +159,7 @@ ExtensionalityClauseIterator ExtensionalityClauseContainer::activeIterator(TermL
   }
 }
 
-void ExtensionalityClauseContainer::print (ostream& out) {
+void ExtensionalityClauseContainer::print (std::ostream& out) {
   out << "#####################" << endl;
 
   ClausesBySort::Iterator cbs(_clausesBySort);

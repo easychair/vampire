@@ -100,7 +100,7 @@ void checkLiteralMatches(LiteralSubstitutionTree<LiteralClause>& index, Options:
     cout << "[  OK  ] " << *lit << endl;
   } else {
     cout << "[ FAIL ] " << *lit << endl;
-    cout << "tree: " << multiline(index, 1) << endl;
+    cout << "tree: " << Output::multiline(index, 1) << endl;
     cout << "query: " << *lit << endl;
 
     cout << "is:" << endl;
@@ -130,7 +130,7 @@ void checkTermMatchesWithUnifFun(TermSubstitutionTree<TermWithoutValue>& index, 
     cout << "[  OK  ] " << term << endl;
   } else {
     cout << "[ FAIL ] " << term << endl;
-    cout << "tree: " << multiline(index, 1) << endl;
+    cout << "tree: " << Output::multiline(index, 1) << endl;
     cout << "query: " << term << endl;
 
     cout << "is:" << endl;

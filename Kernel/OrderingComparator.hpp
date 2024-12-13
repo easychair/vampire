@@ -108,6 +108,7 @@ protected:
   using Trace = TermPartialOrdering;
 
   const Trace* getCurrentTrace();
+  std::pair<Node*, Result> getPrevPoly();
 
   struct Node {
     static_assert(sizeof(uint64_t) == sizeof(Branch));
@@ -160,6 +161,9 @@ protected:
     Branch ngeBranch;
     int refcnt = 0;
     const Trace* trace = nullptr;
+    // points to the previous node containing a polynomial and branch
+    // that was taken, otherwise null if no such node exists.
+    std::pair<Node*, Result> prevPoly = { nullptr, Result::INCOMPARABLE };
   };
 
   const Ordering& _ord;

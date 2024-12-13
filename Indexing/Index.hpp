@@ -16,7 +16,7 @@
 #define __Indexing_Index__
 
 #include "Forwards.hpp"
-#include "Debug/Output.hpp"
+#include "Lib/Output.hpp"
 
 #include "Lib/Allocator.hpp"
 #include "Lib/Event.hpp"
@@ -59,7 +59,7 @@ public:
   Clause* clause = nullptr;
 
   friend std::ostream& operator<<(std::ostream& out, LiteralClause const& self)
-  { return out << "{ " << outputPtr(self.clause) << ", " << outputPtr(self.literal) << " }"; }
+  { return out << "{ " << Output::ptr(self.clause) << ", " << Output::ptr(self.literal) << " }"; }
 };
 
 template<class Value>
@@ -116,7 +116,7 @@ struct TermLiteralClause
   { return out << "("
                << self.term << ", "
                << self.literal
-               << outputPtr(self.clause)
+               << Output::ptr(self.clause)
                << ")"; }
 };
 
@@ -152,7 +152,7 @@ struct DemodulatorData
   IMPL_COMPARISONS_FROM_TUPLE(DemodulatorData)
 
   friend std::ostream& operator<<(std::ostream& out, DemodulatorData const& self)
-  { return out << "(" << self.term << " = " << self.rhs << ", cl " << outputPtr(self.clause) << ")"; }
+  { return out << "(" << self.term << " = " << self.rhs << ", cl " << Output::ptr(self.clause) << ")"; }
 };
 
 struct DemodulatorDataContainer {

@@ -43,6 +43,7 @@ template <typename Key, typename Val,class Hash>
 class Map
 {
 public:
+
   using HashFn = Hash;
   class Entry
   {
@@ -426,6 +427,14 @@ public:
   {
     return updateOrInit(std::move(key), [](Val v) { return std::move(v); }, init);
   } 
+ 
+  /**
+    * like `Val& getOrInit(Key key, InitFn init)`, but uses default constructor for initialization.
+   */
+  Val& getOrInit(Key key) 
+  {
+    return getOrInit(std::move(key), []() { return Val(); });
+  } 
 
 
  
@@ -460,13 +469,6 @@ public:
     return entry->value();
   } 
 
-
- 
-  /**
-   * Find the entry with key @b key, or initialize the value with the default initializer. 
-   */
-  Val& getOrInit(Key key)
-  { return getOrInit(std::move(key), [](){ return Val(); }); } 
 
   /**
    * Assign pointer to value stored under @b key into @b pval.
@@ -706,6 +708,9 @@ public:
     /** iterator will stop looking for the next cell after reaching this one */
     Entry* _last;
   };
+
+  bool keepRecycled() const { return size() != 0; }
+
 
   Iterator iter() 
   { return Iterator(*this); }

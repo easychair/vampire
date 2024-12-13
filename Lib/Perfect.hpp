@@ -131,6 +131,23 @@ template<class T, class Cmp = PerfectIdComparison>
 Perfect<T, Cmp> perfect(T t) 
 { return Perfect<T, Cmp>(std::move(t)); } } // namespace Lib
 
+template<class A, class B, class Cmp> 
+auto operator*(A const& l, Perfect<B, Cmp> const& r) 
+{ return perfect(l * (*r)); }
+
+template<class A, class B> 
+auto operator*(Perfect<A> const& l, B const& r) 
+{ return perfect((*l) * r); }
+
+template<class A, class B> 
+auto operator*(Perfect<A> const& l, Perfect<B> const& r) 
+{ return perfect((*l) * (*r)); }
+
+template<class A> 
+auto operator-(Perfect<A> const& x) 
+{ return perfect(-(*x)); }
+
+
 template<class T, class Cmp> struct std::hash<Lib::Perfect<T, Cmp>> 
 {
   size_t operator()(Lib::Perfect<T, Cmp> const& self) const 

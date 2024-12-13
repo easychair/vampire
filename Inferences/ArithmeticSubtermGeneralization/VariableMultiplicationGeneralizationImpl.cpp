@@ -89,7 +89,7 @@ public:
   Stack<AnyNumber<MonomFactor>> & unwrap() 
   { return _self.template unwrap<Stack<AnyNumber<MonomFactor>>>(); }
 
-  friend ostream& operator<<(ostream& out, VariableRegion const& self) 
+  friend std::ostream& operator<<(std::ostream& out, VariableRegion const& self) 
   {
     return self.isUninit() ? out << "Top"
                         : out << self.unwrap();

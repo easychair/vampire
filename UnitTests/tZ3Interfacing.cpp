@@ -63,7 +63,7 @@ void checkStatus(SAT::Z3Interfacing& z3, SAT2FO& s2f, SATSolver::Status expected
 void checkStatus(SATSolver::Status expected, Stack<Literal*> assumptions)
 {
   SAT2FO s2f;
-  SAT::Z3Interfacing z3(s2f, /* show z3 */ DBG_ON == 1, /* unsat core */ false, /* export smtlib */ "");
+  SAT::Z3Interfacing z3(s2f, /* show z3 */ DBG_ON == 1, /* unsat core */ false, /* export smtlib */ "", Shell::Options::ProblemExportSyntax::SMTLIB);
   checkStatus(z3, s2f, expected, assumptions);
 }
 
@@ -239,7 +239,7 @@ void checkInstantiation(SAT::Z3Interfacing& z3, SAT2FO& s2f, Stack<Literal*> ass
 void checkInstantiation(Stack<Literal*> assumptions, TermList toInstantiate, TermList expected)
 {
   SAT2FO s2f;
-  SAT::Z3Interfacing z3(s2f, /* show z3 */ DBG_ON == 1, /* unsat core */ false, /* export smtlib */ "");
+  SAT::Z3Interfacing z3(s2f, /* show z3 */ DBG_ON == 1, /* unsat core */ false, /* export smtlib */ "", Shell::Options::ProblemExportSyntax::SMTLIB);
   return checkInstantiation(z3, s2f, assumptions, toInstantiate, expected);
 }
 
@@ -347,7 +347,7 @@ TEST_FUN(segfault02) {
 
 
   SAT2FO s2f;
-  SAT::Z3Interfacing z3(s2f, /* show z3 */ DBG_ON == 1, /* unsat core */ false, /* export smtlib */ "");
+  SAT::Z3Interfacing z3(s2f, /* show z3 */ DBG_ON == 1, /* unsat core */ false, /* export smtlib */ "", Shell::Options::ProblemExportSyntax::SMTLIB);
 
   checkStatus(z3, s2f, SATSolver::Status::SATISFIABLE, { inst159 == inst160 });
   z3.solve();

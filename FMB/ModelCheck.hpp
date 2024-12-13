@@ -108,7 +108,8 @@ static void doCheck(UnitList* units)
       sortSizesArray[sort] = curModelSize;
     }
   }
-  FiniteModelMultiSorted model(sortSizesArray);
+  // TODO can we pass a reference here instead of clone()ing?
+  FiniteModelMultiSorted model(sortSizesArray.clone());
 
   Set<Term*> domainConstants; // union of all the perSort ones
   DHMap<Term*,unsigned> domainConstantNumber;
