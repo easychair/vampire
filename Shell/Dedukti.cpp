@@ -1536,8 +1536,23 @@ static void outputAVATARSplitClause(std::ostream &out, Unit *derived) {
     }
   }
 
-  out << ' ';
-  outputParentWithSplits(out, parent);
+  out << " deduction" << parent->number();
+  // basically outputParentWithSplits() but NB comment below
+  if(!parent->noSplits()) {
+    SplitSet &splits = *parent->splits();
+    for(unsigned i = 0; i < splits.size(); i++) {
+      SATLiteral l = Splitter::getLiteralFromName(splits[i]);
+      // if there is *already* a split in the parent (and it's negative),
+      // need to double-negate it in order to match what the parent expects
+      if(!l.polarity())
+        out
+          << "(nnnsp" << l.var() << " : (Prf (not sp" << l.var() << ") -> Prf false) =>"
+          << "nnnsp" << l.var() << " nnsp" << l.var() << ")";
+      else
+        out << " nnsp" << l.var();
+    }
+  }
+
   for(unsigned parentVar : variables(parent))
     out << " " << parentVar;
   for(Literal *l : canonicalise(parent))
