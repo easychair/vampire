@@ -448,8 +448,12 @@ bool MLVariant::isVariant(Literal* const * cl1Lits, Clause* cl2, LiteralList** a
   }
 
   if(map)
-    for(unsigned i = 0; i < cl2->length(); i++)
-      ALWAYS(MatchingUtils::match(alts[i]->head(), cl1Lits[i], false, *map))
+    for(currBLit = 0; currBLit < matchedLen; currBLit++)
+      for(unsigned i = 0; i < md->varCnts[currBLit]; i++)
+        ALWAYS(map->bind(
+          md->altBindings[currBLit][md->nextAlts[currBLit] - 1][i],
+          TermList(md->boundVarNums[currBLit][i], false)
+        ))
 
   return true;
 }

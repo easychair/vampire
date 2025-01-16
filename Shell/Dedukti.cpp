@@ -337,7 +337,7 @@ static void outputLiteralName(
     out << ")";
 }
 
-template<typename Transform, typename Care>
+template<typename Care, typename Transform>
 static void outputLiteralPtr(
   std::ostream &out,
   Literal *literal,
@@ -1477,13 +1477,13 @@ static void outputAVATARSplitClause(std::ostream &out, Unit *derived) {
   out << ")) :=";
 
   Stack<LiteralStack> disjointLiterals;
-  if(parent->length() == 1) {
+  if(!Splitter::getComponents(parent, disjointLiterals)) {
+    disjointLiterals.reset();
     LiteralStack component;
-    component.push((*parent)[0]);
+    for(Literal *l : parent->iterLits())
+      component.push(l);
     disjointLiterals.push(std::move(component));
   }
-  else
-    Splitter::getComponents(parent, disjointLiterals);
 
   for(SATLiteral l : existingSplits) {
     out << " nnsp" << l.var() << " : ((Prf ";
@@ -1498,6 +1498,8 @@ static void outputAVATARSplitClause(std::ostream &out, Unit *derived) {
 
   unsigned closeParens = 0;
   decltype(disjointLiterals)::Iterator classes(disjointLiterals);
+  // map variables in the parent to corresponding variables in the child splits
+  SimpleSubstitution parent2SplitVars;
   while(classes.hasNext()) {
     LiteralStack klass = classes.next();
     Clause *found = nullptr;
@@ -1523,13 +1525,13 @@ static void outputAVATARSplitClause(std::ostream &out, Unit *derived) {
     out << " nnsp" << split.var();
     for(unsigned foundVar : variables(found)) {
       out << " (" << subst.apply(foundVar).var() << " : El iota =>";
+      ALWAYS(parent2SplitVars.bind(subst.apply(foundVar).var(), TermList(foundVar, false)))
       closeParens++;
     }
     for(Literal *l : canonicalise(found)) {
       if(flip)
         l = Literal::complementaryLiteral(l);
-      Literal *lsubst = SubstHelper::apply(l, subst);
-      out << " (" << lsubst << " : (Prf ";
+      out << " (" << SubstHelper::apply(l, subst) << " : (Prf ";
       outputLiteral(out, l, AlwaysCare {}, DoSubstitution(subst));
       out << " -> Prf false) =>";
       closeParens++;
@@ -1554,9 +1556,24 @@ static void outputAVATARSplitClause(std::ostream &out, Unit *derived) {
   }
 
   for(unsigned parentVar : variables(parent))
-    out << " " << parentVar;
-  for(Literal *l : canonicalise(parent))
-    out << " " << l;
+    out << " " << parentVar; //parent2SplitVars.apply(parentVar).var();
+  for(Literal *l : canonicalise(parent)) {
+    out << ' ';
+    Literal *lsubst = SubstHelper::apply(l, parent2SplitVars);
+    bool needs_commute = l->isEquality() && (
+         SubstHelper::apply((*l)[0], parent2SplitVars) != (*lsubst)[0]
+      || SubstHelper::apply((*l)[1], parent2SplitVars) != (*lsubst)[1]);
+    if(needs_commute) {
+      out << "(comml ";
+      outputTerm(out, (*l)[1], AlwaysCare {});
+      out << ' ';
+      outputTerm(out, (*l)[0], AlwaysCare {});
+      out << ' ';
+    }
+    out << l;
+    if(needs_commute)
+      out << ")";
+  }
   while(closeParens--)
     out << ')';
 }
