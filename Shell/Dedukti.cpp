@@ -17,6 +17,7 @@
 #include "Inferences/ProofExtra.hpp"
 #include "Kernel/Clause.hpp"
 #include "Kernel/EqHelper.hpp"
+#include "Kernel/FormulaUnit.hpp"
 #include "Kernel/Matcher.hpp"
 #include "Kernel/MLVariant.hpp"
 #include "Kernel/RobSubstitution.hpp"
@@ -58,6 +59,8 @@ or : (Prop -> (Prop -> Prop)).
 [p, q] Prf (or p q) --> (((Prf p) -> (Prf false)) -> (((Prf q) -> (Prf false)) -> (Prf false))).
 imp : (Prop -> (Prop -> Prop)).
 [p, q] Prf (imp p q) --> ((Prf p) -> (Prf q)).
+iff : Prop -> Prop -> Prop.
+[p, q] Prf (iff p q) --> (Prf (and (imp p q) (imp q p))).
 
 (; Set ;)
 Set : Type.
@@ -418,13 +421,93 @@ static void outputClause(std::ostream &out, Clause *clause) {
     out << ")";
 }
 
+static void outputFormula(std::ostream &out, Formula *f) {
+  switch(f->connective()) {
+    case LITERAL:
+      outputLiteral(out, f->literal(), AlwaysCare {});
+      break;
+    case AND:
+    case OR: {
+      const char *op = f->connective() == AND ? "and" : "or";
+      FormulaList *children = f->args();
+      unsigned close = 0;
+      while(children->tail()) {
+        close++;
+        out << "(" << op << " ";
+        outputFormula(out, children->head());
+        out << ' ';
+        children = children->tail();
+      }
+      ASS(children)
+      outputFormula(out, children->head());
+      while(close--)
+        out << ')';
+      break;
+    }
+    case IMP:
+    case IFF: {
+      const char *op = f->connective() == IMP ? "imp" : "iff";
+      out << '(' << op << ' ';
+      outputFormula(out, f->left());
+      out << ' ';
+      outputFormula(out, f->right());
+      out << ')';
+      break;
+    }
+    case XOR:
+      out << "(not (iff ";
+      outputFormula(out, f->left());
+      out << ' ';
+      outputFormula(out, f->right());
+      out << "))";
+      break;
+    case NOT:
+      out << "(not ";
+      outputFormula(out, f->uarg());
+      out << ')';
+      break;
+    case FORALL:
+    case EXISTS: {
+      const char *binder = f->connective() == FORALL ? "forall" : "exists";
+      unsigned close = 0;
+      VList *vars = f->vars();
+      VList::Iterator vit(vars);
+      while(vit.hasNext()) {
+        unsigned var = vit.next();
+        out << "(" << binder << " iota (" << var << " : El iota => ";
+        close++;
+      }
+      outputFormula(out, f->qarg());
+      while(close--)
+        out << "))";
+      break;
+    }
+    case BOOL_TERM:
+      ASSERTION_VIOLATION
+    case FALSE:
+      out << "false";
+      break;
+    case TRUE:
+      out << "true";
+      break;
+    case NAME:
+    case NOCONN:
+      ASSERTION_VIOLATION
+      break;
+  }
+}
+
+static void outputFormulaUnit(std::ostream &out, FormulaUnit *unit) {
+  out << "Prf ";
+  outputFormula(out, unit->formula());
+}
+
 static void outputAxiomName(std::ostream &out, Unit *axiom) {
   std::string recoveredName;
-  out << "axiom_";
+  out << "{|axiom_";
   if(Parse::TPTP::findAxiomName(axiom, recoveredName))
     out << recoveredName;
-  else
-    out << axiom->number();
+  out << axiom->number() << "|}";
 }
 
 static void outputSplitSet(std::ostream &out, SplitSet &splits) {
@@ -441,19 +524,20 @@ static void outputSplitSet(std::ostream &out, SplitSet &splits) {
   }
 }
 
-static void outputDeductionPrefix(std::ostream &out, Unit *deduction) {
-  // we don't support non-clause deductions yet
-  ASS(deduction->isClause())
-
+static void outputDeductionPrefix(std::ostream &out, Unit *deduction, bool splits = true) {
   out << "def deduction" << deduction->number() << ": ";
-  Clause *clause = static_cast<Clause *>(deduction);
-  outputClause(out, clause);
+  if(deduction->isClause())
+    outputClause(out, static_cast<Clause *>(deduction));
+  else
+    outputFormulaUnit(out, static_cast<FormulaUnit *>(deduction));
+
   out << " := ";
-
-  if(clause->noSplits())
-    return;
-
-  outputSplitSet(out, *clause->splits());
+  if(splits && deduction->isClause()) {
+    Clause *clause = static_cast<Clause *>(deduction);
+    if(clause->noSplits())
+      return;
+    outputSplitSet(out, *clause->splits());
+  }
 }
 
 static void outputParentWithSplits(std::ostream &out, Clause *parent) {
@@ -466,26 +550,25 @@ static void outputParentWithSplits(std::ostream &out, Clause *parent) {
 }
 
 static void sorry(std::ostream &out, Unit *admit) {
-  // we don't support non-clause deductions yet
-  ASS(admit->isClause())
-
-  Clause *clause = static_cast<Clause *>(admit);
   out << "sorry" << admit->number() << ": ";
-
   UnitIterator parents = admit->getParents();
   while(parents.hasNext()) {
     Unit *parent = parents.next();
-    ASS(parent->isClause());
-    Clause *parent_clause = static_cast<Clause *>(parent);
-    outputClause(out, parent_clause);
+    if(parent->isClause())
+      outputClause(out, static_cast<Clause *>(parent));
+    else
+      outputFormulaUnit(out, static_cast<FormulaUnit *>(parent));
     out << " -> ";
   }
-  outputClause(out, clause);
+  if(admit->isClause())
+    outputClause(out, static_cast<Clause *>(admit));
+  else
+    outputFormulaUnit(out, static_cast<FormulaUnit *>(admit));
   out << ".\n";
 
   out << "#PRINT \"sorry: " << ruleName(admit->inference().rule()) << "\".\n";
 
-  outputDeductionPrefix(out, admit);
+  outputDeductionPrefix(out, admit, false);
   out << "sorry" << admit->number();
   parents = admit->getParents();
   while(parents.hasNext())
@@ -1564,7 +1647,10 @@ static void outputAVATARSplitClause(std::ostream &out, Unit *derived) {
          SubstHelper::apply((*l)[0], parent2SplitVars) != (*lsubst)[0]
       || SubstHelper::apply((*l)[1], parent2SplitVars) != (*lsubst)[1]);
     if(needs_commute) {
-      out << "(comml ";
+      out << "(comml";
+      if(!l->polarity())
+        out << "_not";
+      out << ' ';
       outputTerm(out, (*l)[1], AlwaysCare {});
       out << ' ';
       outputTerm(out, (*l)[0], AlwaysCare {});
@@ -1619,19 +1705,12 @@ void outputTypeDecl(std::ostream &out, const std::string &name, OperatorType *ty
 }
 
 void outputAxiom(std::ostream &out, Unit *axiom) {
-  // we don't support non-clause inputs yet
-  ASS(axiom->isClause())
-  // we don't support non-axiom inputs yet
-  ASS(
-    axiom->inputType() == UnitInputType::AXIOM ||
-    axiom->inputType() == UnitInputType::ASSUMPTION ||
-    axiom->inputType() == UnitInputType::NEGATED_CONJECTURE
-  )
-
   outputAxiomName(out, axiom);
   out << ": ";
-  Clause *clause = static_cast<Clause *>(axiom);
-  outputClause(out, clause);
+  if(axiom->isClause())
+    outputClause(out, static_cast<Clause *>(axiom));
+  else
+    outputFormulaUnit(out, static_cast<FormulaUnit *>(axiom));
   out << ".\n";
 }
 
@@ -1639,6 +1718,8 @@ void outputDeduction(std::ostream &out, Unit *u) {
   switch(u->inference().rule())
   {
   case InferenceRule::INPUT:
+    if(u->inputType() == UnitInputType::CONJECTURE)
+      return;
   case InferenceRule::NEGATED_CONJECTURE:
     outputAxiom(out, u);
     outputDeductionPrefix(out, u);
