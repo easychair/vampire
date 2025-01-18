@@ -134,6 +134,11 @@ struct Transformation {
   }
 };
 
+struct Identity : public Transformation<Identity> {
+  Literal *operator()(Literal *literal) { return literal; }
+  TermList operator()(TermList term) { return term; }
+};
+
 template<typename S, typename T>
 struct Sequence : public Transformation<Sequence<S, T>> {
   S s;
@@ -177,7 +182,6 @@ struct DoReplacement : public Transformation<DoReplacement> {
   }
 };
 
-
 static std::vector<Literal *> canonicalise(Clause *cl) {
   std::vector<Literal *> lits;
   for(unsigned i = 0; i < cl->length(); i++)
@@ -198,115 +202,154 @@ struct AlwaysCare {
   bool operator()(unsigned _) { return true; }
 };
 
-template<typename Care>
-static void outputVar(std::ostream &out, unsigned var, bool special, Care care) {
-  if(special)
-    out << "z";
-  else if(care(var))
-    out << var;
+struct Parens {
+  std::ostream &out;
+  unsigned count = 0;
+  Parens(std::ostream &out, bool enable = true, const char *open = "(")
+    : out(out) { nest_if(enable, open); }
+  Parens(Parens &&other) noexcept
+    : out(other.out), count(other.count) { other.count = 0; }
+  Parens(const Parens &) = delete;
+  Parens &operator=(const Parens &) = delete;
+
+  void nest(const char *open = "(") {
+    out << open;
+    count++;
+  }
+
+  void nest_if(bool enable = true, const char *open = "(") {
+    if(enable) nest(open);
+  }
+
+  ~Parens() { while(count--) out << ')'; }
+};
+
+
+struct DkVar {
+  unsigned var = 0;
+  const char *special = nullptr;
+  DkVar(unsigned var) : var(var) {}
+  DkVar(const char *special) : special(special) {}
+};
+
+static std::ostream &operator<<(std::ostream &out, DkVar dk) {
+  if(dk.special)
+    return out << dk.special;
   else
-    out << "inhabit";
+    return out << dk.var;
 }
 
-static void outputName(std::ostream &out, const std::string &name) {
-  out << "{|" << name << "|}";
+template<typename Care = AlwaysCare>
+static DkVar dkVar(unsigned var, Care care = Care {}) {
+  if(care(var))
+    return var;
+  return "inhabit";
+}
+
+template<typename Care = AlwaysCare>
+static DkVar dkVar(TermList t, Care care = Care {}) {
+  if(t.isSpecialVar())
+    return "z";
+  return dkVar(t.var(), care);
+}
+
+struct DkName {
+  const char *name;
+  DkName(const char *name) : name(name) {}
+  DkName(const std::string &name) : DkName(name.c_str()) {}
+  DkName(Term *t) : DkName(t->functionName()) {}
+};
+
+static std::ostream &operator<<(std::ostream &out, DkName dk) {
+  return out << "{|" << dk.name << "|}";
 }
 
 template<typename Care>
-static void outputArgs(std::ostream &out, TermList *start, Care care) {
-  ASS(start->isNonEmpty())
+struct DkArgs {
+  TermList *start;
+  Care care;
+  DkArgs(TermList *start, Care care) : start(start), care(care) {}
+};
 
-  Stack<TermList *> todo;
-  TermList *current = start;
+template<typename Care>
+static std::ostream &operator<<(std::ostream &out, DkArgs<Care> args) {
+  if(args.start->isEmpty())
+    return out;
+
+  struct Frame {
+    TermList *remaining;
+    Parens paren;
+    Frame(std::ostream &out, TermList *remaining) : remaining(remaining), paren(out) {}
+  };
+
+  Stack<Frame> todo;
+  TermList *current = args.start;
   while(true) {
     out << " ";
     if(current->isVar()) {
-      outputVar(out, current->var(), current->isSpecialVar(), care);
+      out << dkVar(*current, args.care);
       current = current->next();
     }
     else if(current->isTerm()) {
       Term *term = current->term();
+      current = current->next();
       if(term->arity()) {
-        out << "(";
-        outputName(out, term->functionName());
-        todo.push(current->next());
+        todo.push(Frame(out, current));
         current = term->args();
       }
-      else {
-        outputName(out, term->functionName());
-        current = current->next();
-      }
+      out << DkName(term);
     }
 
     while(current->isEmpty()) {
       if(todo.isEmpty())
-        return;
-
-      current = todo.pop();
-      out << ")";
+        return out;
+      current = todo.pop().remaining;
     }
   }
 }
 
-template<typename Care>
-static void outputTerm(std::ostream &out, TermList tl, Care care) {
-  if(tl.isVar()) {
-    outputVar(out, tl.var(), tl.isSpecialVar(), care);
-    return;
-  }
-
-  else if(tl.isTerm()) {
-    Term *term = tl.term();
-    if(term->arity())
-      out << "(";
-    outputName(out, term->functionName());
-    if(term->arity())
-      outputArgs(out, term->args(), care);
-    if(term->arity())
-      out << ")";
-  }
-}
+template<typename Care = AlwaysCare>
+struct DkTerm {
+  TermList term;
+  Care care;
+  DkTerm(TermList term, Care care = Care {}) : term(term), care(care) {}
+};
 
 template<typename Care>
-static void outputLiteral(std::ostream &out, Literal *literal, Care care) {
-  if(!literal->polarity())
-    out << "(not ";
-  if(literal->arity())
-    out << "(";
-
-  if(literal->isEquality())
-    out << "eq";
-  else
-    outputName(out, literal->predicateName());
-  if(literal->arity())
-    outputArgs(out, literal->args(), care);
-
-  if(literal->arity())
-    out << ")";
-  if(!literal->polarity())
-    out << ")";
+static std::ostream &operator<<(std::ostream &out, DkTerm<Care> dk) {
+  if(dk.term.isVar()) {
+    out << dkVar(dk.term, dk.care);
+  }
+  else if(dk.term.isTerm()) {
+    Term *term = dk.term.term();
+    Parens p(out, term->arity());
+    out << DkName(term->functionName()) << DkArgs(term->args(), dk.care);
+  }
+  return out;
 }
 
+template<typename Care = AlwaysCare, typename Transform = Identity>
+struct DkLit {
+  Literal *literal;
+  Care care;
+  Transform transform;
 
-template<typename Transform, typename Care>
-static void outputLiteral(
-  std::ostream &out,
-  Literal *literal,
-  Care care,
-  Transform transform
-) {
-  if(!literal->isEquality())
-    return outputLiteral(out, transform(literal), care);
+  DkLit(Literal *literal, Care care = Care {}, Transform transform = Transform {})
+    : literal(literal), care(care), transform(transform) {}
+};
 
-  if(!literal->polarity())
-    out << "(not ";
-  out << "(eq ";
-  outputTerm(out, transform(literal->termArg(0)), care);
-  out << " ";
-  outputTerm(out, transform(literal->termArg(1)), care);
-  out << ")";
-  if(!literal->polarity())
-    out << ")";
+template<typename Care, typename Transform>
+static std::ostream &operator<<(std::ostream &out, DkLit<Care, Transform> dk) {
+  Parens p(out, !dk.literal->polarity(), "(not ");
+  if(dk.literal->isEquality())
+    return out
+      << "(eq "
+      << DkTerm(dk.transform(dk.literal->termArg(0)), dk.care) << " "
+      << DkTerm(dk.transform(dk.literal->termArg(1)), dk.care) << ")";
+
+  Literal *l = dk.transform(dk.literal);
+  p.nest_if(l->arity());
+  return out << DkName(l->predicateName()) << DkArgs(l->args(), dk.care);
 }
 
 template<typename Transform, typename Care>
@@ -327,14 +370,12 @@ static void outputLiteralName(
   TermList leftAfter = transform(literal->termArg(0));
   TermList rightAfter = transform(literal->termArg(1));
   bool need_commute = after->termArg(0) != leftAfter || after->termArg(1) != rightAfter;
-  if(need_commute) {
-    out << "(" << comm << " ";
-    // TODO this is switched with respect to `outputLiteralPtr` - come up with some nice abstraction for this
-    outputTerm(out, leftAfter, care);
-    out << " ";
-    outputTerm(out, rightAfter, care);
-    out << " ";
-  }
+  if(need_commute)
+    out
+      << "(" << comm << " "
+      // TODO this is switched with respect to `outputLiteralPtr` - come up with some nice abstraction for this
+      << DkTerm(leftAfter, care) << " "
+      << DkTerm(rightAfter, care) << " ";
   out << name;
   if(need_commute)
     out << ")";
@@ -360,27 +401,22 @@ static void outputLiteralPtr(
     out << "(comml";
     if(literal->isNegative())
       out << "_not";
-    out << " ";
-    outputTerm(out, rightAfter, care);
-    out << " ";
-    outputTerm(out, leftAfter, care);
-    out << " ";
+    out << " " << DkTerm(rightAfter, care) << " " << DkTerm(leftAfter, care) << " ";
   }
   out << after;
   if(need_commute)
     out << ")";
 }
 
-static void outputSplit(std::ostream &out, SATLiteral split, bool flip = false) {
-  if(split.polarity() == flip)
-    out << "(not ";
-  out << "sp" << split.var();
-  if(split.polarity() == flip)
-    out << ")";
-}
+struct DkSplit {
+  SATLiteral split;
+  DkSplit(SATLiteral split) : split(split) {}
+  DkSplit(unsigned splitName) : DkSplit(Splitter::getLiteralFromName(splitName)) {}
+};
 
-static void outputSplit(std::ostream &out, unsigned splitName, bool flip = false) {
-  outputSplit(out, Splitter::getLiteralFromName(splitName), flip);
+static std::ostream &operator<<(std::ostream &out, DkSplit dk) {
+  Parens p(out, !dk.split.polarity(), "(not ");
+  return out << "sp" << dk.split.var();
 }
 
 static void outputClause(std::ostream &out, Clause *clause) {
@@ -390,15 +426,8 @@ static void outputClause(std::ostream &out, Clause *clause) {
   else {
     out << "Prf_av_clause";
     SplitSet &splits = *clause->splits();
-    for(unsigned i = 0; i < splits.size(); i++) {
-      out << " (if";
-      SATLiteral split = Splitter::getLiteralFromName(splits[i]);
-      if(!split.polarity())
-        out << " (not";
-      out << " sp" << split.var();
-      if(!split.polarity())
-        out << ")";
-    }
+    for(unsigned i = 0; i < splits.size(); i++)
+      out << " (if " << DkSplit(splits[i]);
     out << " (acl";
     close_parens = splits.size() + 1;
   }
@@ -410,10 +439,8 @@ static void outputClause(std::ostream &out, Clause *clause) {
   out << " (cl";
   close_parens++;
   auto canonical = canonicalise(clause);
-  for(Literal *literal : canonical) {
-    out << " (cons ";
-    outputLiteral(out, literal, AlwaysCare {});
-  }
+  for(Literal *literal : canonical)
+    out << " (cons " << DkLit(literal);
   close_parens += canonical.size();
   out << " ec";
 
@@ -424,7 +451,7 @@ static void outputClause(std::ostream &out, Clause *clause) {
 static void outputFormula(std::ostream &out, Formula *f) {
   switch(f->connective()) {
     case LITERAL:
-      outputLiteral(out, f->literal(), AlwaysCare {});
+      out << DkLit(f->literal());
       break;
     case AND:
     case OR: {
@@ -647,22 +674,16 @@ static void outputResolution(std::ostream &out, Clause *derived) {
   for(unsigned v : derivedVars)
     out << " " << v << " : El iota => ";
   // bind literals in the derived clause
-  for(unsigned i = 0; i < derivedLits.size(); i++) {
-    Literal *l = derivedLits[i];
-    out << "" << l << " : (Prf ";
-    outputLiteral(out, l, care);
-    out << " -> Prf false) => ";
-  }
+  for(Literal *l : derivedLits)
+    out << "" << l << " : (Prf " << DkLit(l, care) << " -> Prf false) => ";
 
   // construct the proof term: refer to
   // "A Shallow Embedding of Resolution and Superposition Proofs into the λΠ-Calculus Modulo"
   // Guillaume Burel
   outputParentWithSplits(out, left);
 
-  for(unsigned v : leftVars) {
-    out << " ";
-    outputTerm(out, subst.apply(TermList(v, false), 0), care);
-  }
+  for(unsigned v : leftVars)
+    out << " " << DkTerm(subst.apply(TermList(v, false), 0), care);
   unsigned litLeft;
   for(litLeft = 0; litsLeft[litLeft] != selectedLeft; litLeft++) {
     out << " ";
@@ -673,24 +694,16 @@ static void outputResolution(std::ostream &out, Clause *derived) {
   if(selectedLeft->isNegative())
     std::swap(tp, tnp);
 
-  out << " (" << tp << ": (Prf ";
-  outputLiteral(out, leftSelectedSubst, care);
-  out << ") => ";
+  out << " (" << tp << ": (Prf " << DkLit(leftSelectedSubst, care) << ") => ";
   outputParentWithSplits(out, right);
-  for(unsigned v : rightVars) {
-    out << " ";
-    outputTerm(out, subst.apply(TermList(v, false), 1), care);
-  }
+  for(unsigned v : rightVars)
+    out << " " << DkTerm(subst.apply(TermList(v, false), 1), care);
   unsigned litRight;
   for(litRight = 0; litsRight[litRight] != selectedRight; litRight++) {
     out << " ";
     outputLiteralPtr(out, litsRight[litRight], care, DoRobSubstitution1(subst));
   }
-  out << " (" << tnp << ": Prf ";
-  outputLiteral(out, rightSelectedSubst, care);
-
-  out << " => (tnp tp)";
-  out << ")";
+  out << " (" << tnp << ": Prf " << DkLit(rightSelectedSubst, care) << " => (tnp tp))";
   for(litRight++; litRight < litsRight.size(); litRight++) {
     out << " ";
     outputLiteralPtr(out, litsRight[litRight], care, DoRobSubstitution1(subst));
@@ -731,12 +744,8 @@ static void outputSubsumptionResolution(std::ostream &out, Clause *derived) {
   for(unsigned v : derivedVars)
     out << " " << v << " : El iota => ";
   // bind literals in the derived clause
-  for(unsigned i = 0; i < derivedLits.size(); i++) {
-    Literal *l = derivedLits[i];
-    out << " " << l << " : (Prf ";
-    outputLiteral(out, l, care);
-    out << " -> Prf false) => ";
-  }
+  for(Literal *l : derivedLits)
+    out << " " << l << " : (Prf " << DkLit(l, care) << " -> Prf false) => ";
 
   // construct the proof term: refer to
   // "A Shallow Embedding of Resolution and Superposition Proofs into the λΠ-Calculus Modulo"
@@ -746,10 +755,8 @@ static void outputSubsumptionResolution(std::ostream &out, Clause *derived) {
   // Anja is a smart cookie
   outputParentWithSplits(out, left);
 
-  for(unsigned v : leftVars) {
-    out << " ";
-    outputVar(out, v, false, care);
-  }
+  for(unsigned v : leftVars)
+    out << " " << dkVar(v, care);
 
   // TODO can we make this case distinction less unpleasant?
   if(m->isPositive()) {
@@ -760,14 +767,10 @@ static void outputSubsumptionResolution(std::ostream &out, Clause *derived) {
         continue;
       }
 
-      out << "(tp: (Prf ";
-      outputLiteral(out, m, care);
-      out << ") => ";
+      out << "(tp: (Prf " << DkLit(m, care) << ") => ";
       outputParentWithSplits(out, right);
-      for(unsigned v : rightVars) {
-        out << " ";
-        outputTerm(out, SubstHelper::apply(TermList(v, false), subst), care);
-      }
+      for(unsigned v : rightVars)
+        out << " " << DkTerm(SubstHelper::apply(TermList(v, false), subst), care);
       for(Literal *k : litsRight) {
         out << " ";
         Literal *ksubst = SubstHelper::apply(k, subst);
@@ -775,9 +778,7 @@ static void outputSubsumptionResolution(std::ostream &out, Clause *derived) {
           outputLiteralPtr(out, k, care, DoSubstitution(subst));
           continue;
         }
-        out << "(tnp: Prf ";
-        outputLiteral(out, k, care, DoSubstitution(subst));
-        out << " => (";
+        out << "(tnp: Prf " << DkLit(k, care, DoSubstitution(subst)) << " => (";
         outputLiteralName(out, k, "tnp", "comml", care, DoSubstitution(subst));
         out << " tp))";
       }
@@ -792,14 +793,10 @@ static void outputSubsumptionResolution(std::ostream &out, Clause *derived) {
         continue;
       }
 
-      out << "(tnp: (Prf ";
-      outputLiteral(out, m, care);
-      out << ") => ";
+      out << "(tnp: (Prf " << DkLit(m, care) << ") => ";
       outputParentWithSplits(out, right);
-      for(unsigned v : rightVars) {
-        out << " ";
-        outputTerm(out, SubstHelper::apply(TermList(v, false), subst), care);
-      }
+      for(unsigned v : rightVars)
+        out << " " << DkTerm(SubstHelper::apply(TermList(v, false), subst), care);
       for(Literal *k : litsRight) {
         out << " ";
         Literal *ksubst = SubstHelper::apply(k, subst);
@@ -807,9 +804,7 @@ static void outputSubsumptionResolution(std::ostream &out, Clause *derived) {
           outputLiteralPtr(out, k, care, DoSubstitution(subst));
           continue;
         }
-        out << "(tp: Prf ";
-        outputLiteral(out, k, care, DoSubstitution(subst));
-        out << " => (tnp ";
+        out << "(tp: Prf " << DkLit(k, care, DoSubstitution(subst)) << " => (tnp ";
         outputLiteralName(out, k, "tp", "comm", care, DoSubstitution(subst));
         out << "))";
       }
@@ -871,22 +866,16 @@ static void outputSuperposition(std::ostream &out, Clause *derived) {
   for(unsigned v : derivedVars)
     out << " " << v << " : El iota =>";
   // bind literals in the derived clause
-  for(unsigned i = 0; i < derivedLits.size(); i++) {
-    Literal *l = derivedLits[i];
-    out << " " << l << " : (Prf ";
-    outputLiteral(out, l, care);
-    out << " -> Prf false) =>";
-  }
+  for(Literal *l : derivedLits)
+    out << " " << l << " : (Prf " << DkLit(l, care) << " -> Prf false) =>";
 
   // construct the proof term: refer to
   // "A Shallow Embedding of Resolution and Superposition Proofs into the λΠ-Calculus Modulo"
   // Guillaume Burel
   outputParentWithSplits(out, left);
 
-  for(unsigned v : leftVars) {
-    out << " ";
-    outputTerm(out, subst.apply(TermList(v, false), 0), care);
-  }
+  for(unsigned v : leftVars)
+    out << " " << DkTerm(subst.apply(TermList(v, false), 0), care);
   for(Literal *litLeft : litsLeft) {
     out << " ";
 
@@ -900,39 +889,27 @@ static void outputSuperposition(std::ostream &out, Clause *derived) {
       continue;
     }
 
-    out << " (q : (Prf (";
-    outputLiteral(out, litLeft, care, DoRobSubstitution0(subst));
-    out << ")) => ";
+    out << " (q : (Prf (" << DkLit(litLeft, care, DoRobSubstitution0(subst)) << ")) => ";
     outputParentWithSplits(out, right);
 
-    for(unsigned v : rightVars) {
-      out << " ";
-      outputTerm(out, subst.apply(TermList(v, false), 1), care);
-    }
+    for(unsigned v : rightVars)
+      out << " " << DkTerm(subst.apply(TermList(v, false), 1), care);
     unsigned litRight;
     for(litRight = 0; litsRight[litRight] != rightSelected; litRight++) {
       out << " ";
       outputLiteralPtr(out, litsRight[litRight], care, DoRobSubstitution1(subst));
     }
 
-    out << " (r : (Prf ";
-    outputLiteral(out, rightSelected, care, DoRobSubstitution1(subst));
-    out << ") => ";
+    out << " (r : (Prf " << DkLit(rightSelected, care, DoRobSubstitution1(subst)) << ") => ";
     outputLiteralPtr(out, litLeft, care, DoRobSubstitution0(subst).then(DoReplacement(fromSubst, toSubst)));
     out << " (";
 
-    if(!fromisLHS) {
-      out << "comm ";
-      outputTerm(out, toSubst, care);
-      out << " ";
-      outputTerm(out, fromSubst, care);
-      out << " ";
-    }
+    if(!fromisLHS)
+      out << "comm " << DkTerm(toSubst, care) << " " << DkTerm(fromSubst, care) << " ";
     out << "r (z : (El iota) => ";
 
     TermList z(0, true);
-    outputLiteral(out, litLeft, care, DoRobSubstitution0(subst).then(DoReplacement(fromSubst, z)));
-    out << ") q))";
+    out << DkLit(litLeft, care, DoRobSubstitution0(subst).then(DoReplacement(fromSubst, z))) << ") q))";
 
     for(litRight++; litRight < litsRight.size(); litRight++) {
       out << " ";
@@ -998,22 +975,16 @@ static void outputDemodulation(std::ostream &out, Clause *derived) {
   for(unsigned v : derivedVars)
     out << " " << v << " : El iota =>";
   // bind literals in the derived clause
-  for(unsigned i = 0; i < derivedLits.size(); i++) {
-    Literal *l = derivedLits[i];
-    out << " " << l << " : (Prf ";
-    outputLiteral(out, l, care);
-    out << " -> Prf false) =>";
-  }
+  for(Literal *l : derivedLits)
+    out << " " << l << " : (Prf " << DkLit(l, care) << " -> Prf false) =>";
 
   // construct the proof term: refer to
   // "A Shallow Embedding of Resolution and Superposition Proofs into the λΠ-Calculus Modulo"
   // Guillaume Burel
   outputParentWithSplits(out, left);
 
-  for(unsigned v : leftVars) {
-    out << " ";
-    outputVar(out, v, false, care);
-  }
+  for(unsigned v : leftVars)
+    out << " " << dkVar(v, care);
   for(Literal *litLeft : litsLeft) {
     out << " ";
 
@@ -1027,33 +998,21 @@ static void outputDemodulation(std::ostream &out, Clause *derived) {
       continue;
     }
 
-    out << " (q : (Prf (";
-    outputLiteral(out, litLeft, care);
-    out << ")) => ";
+    out << " (q : (Prf (" << DkLit(litLeft, care) << ")) => ";
     outputParentWithSplits(out, right);
 
-    for(unsigned v : rightVars) {
-      out << " ";
-      outputTerm(out, SubstHelper::apply(TermList(v, false), subst), care);
-    }
-    out << " (r : (Prf ";
-    outputLiteral(out, rightLit, care, DoSubstitution(subst));
-    out << ") => ";
+    for(unsigned v : rightVars)
+      out << " " << DkTerm(SubstHelper::apply(TermList(v, false), subst), care);
+    out << " (r : (Prf " << DkLit(rightLit, care, DoSubstitution(subst)) << ") => ";
     outputLiteralPtr(out, litLeft, care, DoReplacement(target, toSubst));
     out << " (";
 
-    if(!fromisLHS) {
-      out << "comm ";
-      outputTerm(out, toSubst, care);
-      out << " ";
-      outputTerm(out, target, care);
-      out << " ";
-    }
+    if(!fromisLHS)
+      out << "comm " << DkTerm(toSubst, care) << " " << DkTerm(target, care) << " ";
     out << "r (z : (El iota) => ";
 
     TermList z(0, true);
-    outputLiteral(out, litLeft, care, DoReplacement(target, z));
-    out << ") q)))";
+    out << DkLit(litLeft, care, DoReplacement(target, z)) << ") q)))";
   }
 }
 
@@ -1078,18 +1037,12 @@ static void outputDefinitionUnfolding(std::ostream &out, Clause *derived) {
   for(unsigned v : derivedVars)
     out << " " << v << " : El iota =>";
   // bind literals in the derived clause
-  for(unsigned i = 0; i < derivedLits.size(); i++) {
-    Literal *l = derivedLits[i];
-    out << " " << l << " : (Prf ";
-    outputLiteral(out, l, care);
-    out << " -> Prf false) =>";
-  }
+  for(Literal *l : derivedLits)
+    out << " " << l << " : (Prf " << DkLit(l, care) << " -> Prf false) =>";
 
   out << " deduction" << parent->number();
-  for(unsigned v : derivedVars) {
-    out << " ";
-    outputVar(out, v, false, care);
-  }
+  for(unsigned v : derivedVars)
+    out << " " << dkVar(v, care);
 
   std::unordered_map<unsigned, unsigned> rewrites;
   for(unsigned i = 0; i < defs.size(); i++)
@@ -1098,9 +1051,7 @@ static void outputDefinitionUnfolding(std::ostream &out, Clause *derived) {
   std::vector<std::string> after;
   for(Literal *l : parentLits) {
 restart:
-    out << " (t_" << l << " : Prf ";
-    outputLiteral(out, l, care);
-    out << " =>";
+    out << " (t_" << l << " : Prf " << DkLit(l, care) << " =>";
     NonVariableIterator subterms(l);
     while(subterms.hasNext()) {
       Term *candidate = subterms.next().term();
@@ -1117,13 +1068,9 @@ restart:
         out << " deduction" << def->number();
 
         auto defVars = variables(def);
-        for(unsigned v : defVars) {
-          out << " ";
-          outputTerm(out, subst.apply(v), care);
-        }
-        out << " (e_" << eq << " : Prf ";
-        outputLiteral(out, eq, care, DoSubstitution(subst));
-        out << " => ";
+        for(unsigned v : defVars)
+          out << " " << DkTerm(subst.apply(v), care);
+        out << " (e_" << eq << " : Prf " << DkLit(eq, care, DoSubstitution(subst)) << " => ";
 
         std::stringstream deferred;
 
@@ -1137,38 +1084,28 @@ restart:
           TermList rightAfter = transform(l->termArg(1));
           needs_comm = lAfter->termArg(0) != leftAfter || lAfter->termArg(1) != rightAfter;
 
-          if (needs_comm) {
-            deferred << "(comm" << (lAfter->polarity() ? "" : "l") << " ";
-            outputTerm(deferred, leftAfter, care);
-            deferred << " ";
-            outputTerm(deferred, rightAfter, care);
-          }
+          if (needs_comm)
+            deferred
+              << "(comm" << (lAfter->polarity() ? "" : "l")
+              << " " << DkTerm(leftAfter, care) << " " << DkTerm(rightAfter, care);
         }
 
         deferred << " (";
         if(eq->termArg(0) == lhs)
           deferred << "e_" << eq;
-        else {
-          deferred << "(comm ";
-          outputTerm(
-            deferred,
-            SubstHelper::apply(eq->termArg(0), subst),
-            care
-          );
-          deferred << " ";
-          outputTerm(
-            deferred,
-            SubstHelper::apply(eq->termArg(1), subst),
-            care
-          );
-          deferred << " e_" << eq << ")";
-        }
-        deferred << " (z : El iota => ";
-        outputLiteral(deferred, l, care, DoReplacement(lhsSubst, TermList(0, true)));
-        deferred << ") t_" << l << ")))";
-        if (needs_comm){
+        else
+          deferred
+            << "(comm "
+            << DkTerm(SubstHelper::apply(eq->termArg(0), subst), care)
+            << " "
+            << DkTerm(SubstHelper::apply(eq->termArg(1), subst), care)
+            << " e_" << eq << ")";
+        deferred
+          << " (z : El iota => "
+          << DkLit(l, care, DoReplacement(lhsSubst, TermList(0, true)))
+          << ") t_" << l << ")))";
+        if(needs_comm)
           deferred << ")";
-        }
         l = lAfter;
 
         after.push_back(deferred.str());
@@ -1203,33 +1140,23 @@ static void outputTrivialInequalityRemoval(std::ostream &out, Clause *derived) {
   for(unsigned v : derivedVars)
     out << " " << v << " : El iota => ";
   // bind literals in the derived clause
-  for(unsigned i = 0; i < derivedLits.size(); i++) {
-    Literal *l = derivedLits[i];
-    out << "" << l << " : (Prf ";
-    outputLiteral(out, l, care);
-    out << " -> Prf false) => ";
-  }
+  for(Literal *l : derivedLits)
+    out << "" << l << " : (Prf " << DkLit(l, care) << " -> Prf false) => ";
 
   // construct the proof term: refer to
   // "A Shallow Embedding of Resolution and Superposition Proofs into the λΠ-Calculus Modulo"
   // Guillaume Burel
   outputParentWithSplits(out, parent);
 
-  for(unsigned v : parentVars) {
-    out << " ";
-    outputVar(out, v, false, care);
-  }
+  for(unsigned v : parentVars)
+    out << " " << dkVar(v, care);
   for(Literal *l : litsParent) {
     out << " ";
     if(l->polarity() || !l->isEquality() || l->termArg(0) != l->termArg(1)) {
       out << l;
       continue;
     }
-    out << "(p : Prf (";
-    outputLiteral(out, l, care);
-    out << ") => p (refl ";
-    outputTerm(out, l->termArg(0), care);
-    out << "))";
+    out << "(p : Prf (" << DkLit(l, care) << ") => p (refl " << DkTerm(l->termArg(0), care) << "))";
   }
 }
 
@@ -1270,33 +1197,28 @@ static void outputEqualityResolution(std::ostream &out, Clause *derived) {
   for(unsigned v : derivedVars)
     out << " " << v << " : El iota => ";
   // bind literals in the derived clause
-  for(unsigned i = 0; i < derivedLits.size(); i++) {
-    Literal *l = derivedLits[i];
-    out << "" << l << " : (Prf ";
-    outputLiteral(out, l, care);
-    out << " -> Prf false) => ";
-  }
+  for(Literal *l : derivedLits)
+    out << "" << l << " : (Prf " << DkLit(l, care) << " -> Prf false) => ";
 
   // construct the proof term: refer to
   // "A Shallow Embedding of Resolution and Superposition Proofs into the λΠ-Calculus Modulo"
   // Guillaume Burel
   outputParentWithSplits(out, parent);
 
-  for(unsigned v : parentVars) {
-    out << " ";
-    outputTerm(out, subst.apply(TermList(v, false), 0), care);
-  }
+  for(unsigned v : parentVars)
+    out << " " << DkTerm(subst.apply(TermList(v, false), 0), care);
   unsigned lit;
   for(lit = 0; litsParent[lit] != selected; lit++) {
     out << " ";
     outputLiteralPtr(out, litsParent[lit], care, DoRobSubstitution0(subst));
   }
 
-  out << " (p : Prf (";
-  outputLiteral(out, subst.apply(selected, 0), care);
-  out << ") => p (refl ";
-  outputTerm(out, subst.apply(s, 0), care);
-  out << "))";
+  out
+    << " (p : Prf ("
+    << DkLit(subst.apply(selected, 0), care)
+    << ") => p (refl "
+    << DkTerm(subst.apply(s, 0), care)
+    << "))";
 
   for(lit++; lit < litsParent.size(); lit++) {
     out << " ";
@@ -1341,34 +1263,28 @@ static void outputEqualityResolutionWithDeletion(std::ostream &out, Clause *deri
   for(unsigned v : derivedVars)
     out << " " << v << " : El iota => ";
   // bind literals in the derived clause
-  for(unsigned i = 0; i < derivedLits.size(); i++) {
-    Literal *l = derivedLits[i];
-    out << "" << l << " : (Prf ";
-    outputLiteral(out, l, care);
-    out << " -> Prf false) => ";
-  }
+  for(Literal *l : derivedLits)
+    out << "" << l << " : (Prf " << DkLit(l, care) << " -> Prf false) => ";
 
   // construct the proof term: refer to
   // "A Shallow Embedding of Resolution and Superposition Proofs into the λΠ-Calculus Modulo"
   // Guillaume Burel
   out << "deduction" << parent->number();
 
-  for(unsigned v : parentVars) {
-    out << " ";
-    outputTerm(out, subst.apply(v), care);
-  }
-
+  for(unsigned v : parentVars)
+    out << " " << DkTerm(subst.apply(v), care);
   for(Literal *l : litsParent) {
     out << " ";
     if(!er.resolved.count(l)) {
       outputLiteralPtr(out, l, care, DoSubstitution(subst));
       continue;
     }
-    out << " (p : Prf (";
-    outputLiteral(out, SubstHelper::apply(l, subst), care);
-    out << ") => p (refl ";
-    outputTerm(out, SubstHelper::apply(l->termArg(0), subst), care);
-    out << "))";
+    out
+      << " (p : Prf ("
+      << DkLit(SubstHelper::apply(l, subst), care)
+      << ") => p (refl "
+      << DkTerm(SubstHelper::apply(l->termArg(0), subst), care)
+      << "))";
   }
 }
 
@@ -1388,21 +1304,16 @@ static void outputDuplicateLiteral(std::ostream &out, Clause *derived) {
   for(unsigned v : vars)
     out << " " << v << " : El iota => ";
   // bind literals in the derived clause
-  for(Literal *l : derivedLits) {
-    out << "" << l << " : (Prf ";
-    outputLiteral(out, l, AlwaysCare {});
-    out << " -> Prf false) => ";
-  }
+  for(Literal *l : derivedLits)
+    out << "" << l << " : (Prf " << DkLit(l) << " -> Prf false) => ";
 
   // construct the proof term: refer to
   // "A Shallow Embedding of Resolution and Superposition Proofs into the λΠ-Calculus Modulo"
   // Guillaume Burel
   outputParentWithSplits(out, parent);
 
-  for(unsigned v : vars) {
-    out << " ";
-    outputVar(out, v, false, AlwaysCare {});
-  }
+  for(unsigned v : vars)
+    out << " " << dkVar(v);
   for(Literal *l : litsParent)
     out << " " << l;
 }
@@ -1443,22 +1354,16 @@ static void outputFactoring(std::ostream &out, Clause *derived) {
   for(unsigned v : derivedVars)
     out << " " << v << " : El iota => ";
   // bind literals in the derived clause
-  for(unsigned i = 0; i < derivedLits.size(); i++) {
-    Literal *l = derivedLits[i];
-    out << "" << l << " : (Prf ";
-    outputLiteral(out, l, care);
-    out << " -> Prf false) => ";
-  }
+  for(Literal *l : derivedLits)
+    out << "" << l << " : (Prf " << DkLit(l, care) << " -> Prf false) => ";
 
   // construct the proof term: refer to
   // "A Shallow Embedding of Resolution and Superposition Proofs into the λΠ-Calculus Modulo"
   // Guillaume Burel
   outputParentWithSplits(out, parent);
 
-  for(unsigned v : parentVars) {
-    out << " ";
-    outputTerm(out, subst.apply(TermList(v, false), 0), care);
-  }
+  for(unsigned v : parentVars)
+    out << " " << DkTerm(subst.apply(TermList(v, false), 0), care);
   for(Literal *l : litsParent) {
     out << " ";
     outputLiteralPtr(out, l, care, DoRobSubstitution0(subst));
@@ -1475,11 +1380,8 @@ static void outputAVATARDefinition(std::ostream &out, Unit *def) {
   for(unsigned var : vars)
     out << " forall iota (" << var << " : El iota =>";
   auto literals = canonicalise(component);
-  for(Literal *literal : literals) {
-    out << " (imp (not ";
-    outputLiteral(out, literal, AlwaysCare {});
-    out << ")";
-  }
+  for(Literal *literal : literals)
+    out << " (imp (not " << DkLit(literal) << ")";
   out << " false";
   for(unsigned i = 0; i < literals.size() + vars.size(); i++)
     out << ")";
@@ -1499,14 +1401,9 @@ static void outputAVATARComponent(std::ostream &out, Clause *component) {
   for(unsigned v : componentVars)
     out << " " << v << " : El iota => ";
   // bind literals in the derived clause
-  for(Literal *l : literals) {
-    out << "" << l << " : (Prf ";
-    outputLiteral(out, l, AlwaysCare {});
-    out << " -> Prf false) => ";
-  }
-  out << "nnsp" << split.var() << "(psp : Prf ";
-  outputSplit(out, componentName);
-  out << " => psp";
+  for(Literal *l : literals)
+    out << "" << l << " : (Prf " << DkLit(l) << " -> Prf false) => ";
+  out << "nnsp" << split.var() << "(psp : Prf " << DkSplit(componentName) << " => psp";
 
   for(unsigned v : componentVars)
     out << " " << v;
@@ -1545,15 +1442,11 @@ static void outputAVATARSplitClause(std::ostream &out, Unit *derived) {
   }
 
   out << "def deduction" << derived->number() << " : Prf_av_clause";
-  for(SATLiteral sl : existingSplits) {
-    out << " (if ";
-    outputSplit(out, sl);
-  }
+  for(SATLiteral sl : existingSplits)
+    out << " (if " << DkSplit(sl);
   out << " (acl (cl";
-  for(SATLiteral sl : newSplits) {
-    out << " (cons ";
-    outputSplit(out, sl);
-  }
+  for(SATLiteral sl : newSplits)
+    out << " (cons " << DkSplit(sl);
   out << " ec";
   for(unsigned i = 0; i < sat->length(); i++)
     out << ")";
@@ -1568,16 +1461,10 @@ static void outputAVATARSplitClause(std::ostream &out, Unit *derived) {
     disjointLiterals.push(std::move(component));
   }
 
-  for(SATLiteral l : existingSplits) {
-    out << " nnsp" << l.var() << " : ((Prf ";
-    outputSplit(out, l);
-    out << " -> Prf false) -> Prf false) =>";
-  }
-  for(SATLiteral l : newSplits) {
-    out << " nnsp" << l.var() << " : (Prf ";
-    outputSplit(out, l);
-    out << " -> Prf false) =>";
-  }
+  for(SATLiteral l : existingSplits)
+    out << " nnsp" << l.var() << " : ((Prf " << DkSplit(l) << " -> Prf false) -> Prf false) =>";
+  for(SATLiteral l : newSplits)
+    out << " nnsp" << l.var() << " : (Prf " << DkSplit(l) << " -> Prf false) =>";
 
   unsigned closeParens = 0;
   decltype(disjointLiterals)::Iterator classes(disjointLiterals);
@@ -1614,9 +1501,10 @@ static void outputAVATARSplitClause(std::ostream &out, Unit *derived) {
     for(Literal *l : canonicalise(found)) {
       if(flip)
         l = Literal::complementaryLiteral(l);
-      out << " (" << SubstHelper::apply(l, subst) << " : (Prf ";
-      outputLiteral(out, l, AlwaysCare {}, DoSubstitution(subst));
-      out << " -> Prf false) =>";
+      out
+        << " (" << SubstHelper::apply(l, subst) << " : (Prf "
+        << DkLit(l, AlwaysCare {}, DoSubstitution(subst))
+        << " -> Prf false) =>";
       closeParens++;
     }
   }
@@ -1650,11 +1538,7 @@ static void outputAVATARSplitClause(std::ostream &out, Unit *derived) {
       out << "(comml";
       if(!l->polarity())
         out << "_not";
-      out << ' ';
-      outputTerm(out, (*l)[1], AlwaysCare {});
-      out << ' ';
-      outputTerm(out, (*l)[0], AlwaysCare {});
-      out << ' ';
+      out << ' ' << DkTerm((*l)[1]) << ' ' << DkTerm((*l)[0]) << ' ';
     }
     out << l;
     if(needs_commute)
@@ -1679,8 +1563,7 @@ void outputPrelude(std::ostream &out) {
 }
 
 void outputTypeDecl(std::ostream &out, const std::string &name, OperatorType *type) {
-  outputName(out, name);
-  out << ": ";
+  out << DkName(name) << ": ";
 
   // we don't support polymorphism yet
   ASS_EQ(type->numTypeArguments(), 0)
