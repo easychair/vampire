@@ -202,55 +202,55 @@ struct AlwaysCare {
   bool operator()(unsigned _) { return true; }
 };
 
-struct Parens {
+struct CloseParens {
   std::ostream &out;
   unsigned count = 0;
-  Parens(std::ostream &out, bool enable = true, const char *open = "(")
-    : out(out) { nest_if(enable, open); }
-  Parens(Parens &&other) noexcept
+  CloseParens(std::ostream &out) : out(out) {}
+  CloseParens(CloseParens &&other) noexcept
     : out(other.out), count(other.count) { other.count = 0; }
-  Parens(const Parens &) = delete;
-  Parens &operator=(const Parens &) = delete;
+  CloseParens(const CloseParens &) = delete;
+  CloseParens &operator=(const CloseParens &) = delete;
 
-  void nest(const char *open = "(") {
-    out << open;
+  [[nodiscard]] const char *open(const char *start = "(") & {
     count++;
+    return start;
   }
 
-  void nest_if(bool enable = true, const char *open = "(") {
-    if(enable) nest(open);
+  [[nodiscard]] const char *open_if(bool condition, const char *start = "(") & {
+    if(condition)
+      return open(start);
+    return "";
   }
 
-  ~Parens() { while(count--) out << ')'; }
+  ~CloseParens() { while(count--) out << ')'; }
 };
 
-
 struct DkVar {
-  unsigned var = 0;
-  const char *special = nullptr;
-  DkVar(unsigned var) : var(var) {}
-  DkVar(const char *special) : special(special) {}
+  int code = 0;
+
+  template<typename Care>
+  DkVar(unsigned var, bool specialVar, Care care) {
+    if(specialVar)
+      code = -1;
+    else if(!care(var))
+      code = -2;
+    else
+      code = var;
+  }
+
+  template<typename Care = AlwaysCare>
+  DkVar(unsigned var, Care care = Care {}) : DkVar(var, false, care) {}
+  template<typename Care = AlwaysCare>
+  DkVar(TermList t, Care care = Care {}) : DkVar(t.var(), t.isSpecialVar(), care) {}
 };
 
 static std::ostream &operator<<(std::ostream &out, DkVar dk) {
-  if(dk.special)
-    return out << dk.special;
+  if(dk.code == -1)
+    return out << "z";
+  else if(dk.code == -2)
+    return out << "inhabit";
   else
-    return out << dk.var;
-}
-
-template<typename Care = AlwaysCare>
-static DkVar dkVar(unsigned var, Care care = Care {}) {
-  if(care(var))
-    return var;
-  return "inhabit";
-}
-
-template<typename Care = AlwaysCare>
-static DkVar dkVar(TermList t, Care care = Care {}) {
-  if(t.isSpecialVar())
-    return "z";
-  return dkVar(t.var(), care);
+    return out << dk.code;
 }
 
 struct DkName {
@@ -278,8 +278,8 @@ static std::ostream &operator<<(std::ostream &out, DkArgs<Care> args) {
 
   struct Frame {
     TermList *remaining;
-    Parens paren;
-    Frame(std::ostream &out, TermList *remaining) : remaining(remaining), paren(out) {}
+    CloseParens close;
+    Frame(std::ostream &out, TermList *remaining) : remaining(remaining), close(out) { out << close.open(); }
   };
 
   Stack<Frame> todo;
@@ -287,7 +287,7 @@ static std::ostream &operator<<(std::ostream &out, DkArgs<Care> args) {
   while(true) {
     out << " ";
     if(current->isVar()) {
-      out << dkVar(*current, args.care);
+      out << DkVar(*current, args.care);
       current = current->next();
     }
     else if(current->isTerm()) {
@@ -317,15 +317,13 @@ struct DkTerm {
 
 template<typename Care>
 static std::ostream &operator<<(std::ostream &out, DkTerm<Care> dk) {
-  if(dk.term.isVar()) {
-    out << dkVar(dk.term, dk.care);
-  }
-  else if(dk.term.isTerm()) {
-    Term *term = dk.term.term();
-    Parens p(out, term->arity());
-    out << DkName(term->functionName()) << DkArgs(term->args(), dk.care);
-  }
-  return out;
+  if(dk.term.isVar())
+    return out << DkVar(dk.term, dk.care);
+
+  Term *term = dk.term.term();
+  CloseParens cp(out);
+  out << cp.open_if(term->arity());
+  return out << DkName(term) << DkArgs(term->args(), dk.care);
 }
 
 template<typename Care = AlwaysCare, typename Transform = Identity>
@@ -340,7 +338,8 @@ struct DkLit {
 
 template<typename Care, typename Transform>
 static std::ostream &operator<<(std::ostream &out, DkLit<Care, Transform> dk) {
-  Parens p(out, !dk.literal->polarity(), "(not ");
+  CloseParens cp(out);
+  out << cp.open_if(!dk.literal->polarity(), "(not ");
   if(dk.literal->isEquality())
     return out
       << "(eq "
@@ -348,7 +347,7 @@ static std::ostream &operator<<(std::ostream &out, DkLit<Care, Transform> dk) {
       << DkTerm(dk.transform(dk.literal->termArg(1)), dk.care) << ")";
 
   Literal *l = dk.transform(dk.literal);
-  p.nest_if(l->arity());
+  out << cp.open_if(l->arity());
   return out << DkName(l->predicateName()) << DkArgs(l->args(), dk.care);
 }
 
@@ -415,108 +414,84 @@ struct DkSplit {
 };
 
 static std::ostream &operator<<(std::ostream &out, DkSplit dk) {
-  Parens p(out, !dk.split.polarity(), "(not ");
-  return out << "sp" << dk.split.var();
+  CloseParens cp(out);
+  return out << cp.open_if(!dk.split.polarity(), "(not ") << "sp" << dk.split.var();
 }
 
-static void outputClause(std::ostream &out, Clause *clause) {
-  unsigned close_parens = 0;
-  if(clause->noSplits())
+struct DkClause {
+  Clause *clause;
+  DkClause(Clause *clause) : clause(clause) {}
+};
+
+static std::ostream &operator<<(std::ostream &out, DkClause dk) {
+  CloseParens cp(out);
+  if(dk.clause->noSplits())
     out << "Prf_clause";
   else {
     out << "Prf_av_clause";
-    SplitSet &splits = *clause->splits();
+    SplitSet &splits = *dk.clause->splits();
     for(unsigned i = 0; i < splits.size(); i++)
-      out << " (if " << DkSplit(splits[i]);
-    out << " (acl";
-    close_parens = splits.size() + 1;
+      out << cp.open(" (if ") << DkSplit(splits[i]);
+    out << cp.open(" (acl");
   }
-  auto vars = variables(clause);
+
+  auto vars = variables(dk.clause);
   for(unsigned var : vars)
-    out << " (bind iota (" << var << " : El iota =>";
-  close_parens += 2 * vars.size();
+    out << cp.open(" (bind iota ") << cp.open() << var << " : El iota =>";
 
-  out << " (cl";
-  close_parens++;
-  auto canonical = canonicalise(clause);
+  out << cp.open(" (cl");
+  auto canonical = canonicalise(dk.clause);
   for(Literal *literal : canonical)
-    out << " (cons " << DkLit(literal);
-  close_parens += canonical.size();
-  out << " ec";
-
-  for(unsigned i = 0; i < close_parens; i++)
-    out << ")";
+    out << cp.open(" (cons ") << DkLit(literal);
+  return out << " ec";
 }
 
-static void outputFormula(std::ostream &out, Formula *f) {
+struct DkFormula {
+  Formula *formula;
+  DkFormula(Formula *formula) : formula(formula) {}
+};
+
+static std::ostream &operator<<(std::ostream &out, DkFormula dk) {
+  Formula *f = dk.formula;
+  CloseParens cp(out);
   switch(f->connective()) {
     case LITERAL:
-      out << DkLit(f->literal());
-      break;
+      return out << DkLit(f->literal());
     case AND:
     case OR: {
       const char *op = f->connective() == AND ? "and" : "or";
       FormulaList *children = f->args();
-      unsigned close = 0;
       while(children->tail()) {
-        close++;
-        out << "(" << op << " ";
-        outputFormula(out, children->head());
-        out << ' ';
+        out << cp.open() << op << " " << DkFormula(children->head()) << ' ';
         children = children->tail();
       }
-      ASS(children)
-      outputFormula(out, children->head());
-      while(close--)
-        out << ')';
-      break;
+      return out << DkFormula(children->head());
     }
     case IMP:
     case IFF: {
       const char *op = f->connective() == IMP ? "imp" : "iff";
-      out << '(' << op << ' ';
-      outputFormula(out, f->left());
-      out << ' ';
-      outputFormula(out, f->right());
-      out << ')';
-      break;
+      return out << '(' << op << ' ' << DkFormula(f->left()) << ' ' << DkFormula(f->right()) << ')';
     }
     case XOR:
-      out << "(not (iff ";
-      outputFormula(out, f->left());
-      out << ' ';
-      outputFormula(out, f->right());
-      out << "))";
-      break;
+      return out << "(not (iff " << DkFormula(f->left()) << ' ' << DkFormula(f->right()) << "))";
     case NOT:
-      out << "(not ";
-      outputFormula(out, f->uarg());
-      out << ')';
-      break;
+      return out << "(not " << DkFormula(f->uarg()) << ')';
     case FORALL:
     case EXISTS: {
       const char *binder = f->connective() == FORALL ? "forall" : "exists";
-      unsigned close = 0;
       VList *vars = f->vars();
       VList::Iterator vit(vars);
-      while(vit.hasNext()) {
-        unsigned var = vit.next();
-        out << "(" << binder << " iota (" << var << " : El iota => ";
-        close++;
-      }
-      outputFormula(out, f->qarg());
-      while(close--)
-        out << "))";
-      break;
+      while(vit.hasNext())
+        out << cp.open() << binder << cp.open(" iota (") << vit.next() << " : El iota => ";
+      out << DkFormula(f->qarg());
+      return out;
     }
     case BOOL_TERM:
       ASSERTION_VIOLATION
     case FALSE:
-      out << "false";
-      break;
+      return out << "false";
     case TRUE:
-      out << "true";
-      break;
+      return out << "true";
     case NAME:
     case NOCONN:
       ASSERTION_VIOLATION
@@ -524,9 +499,16 @@ static void outputFormula(std::ostream &out, Formula *f) {
   }
 }
 
-static void outputFormulaUnit(std::ostream &out, FormulaUnit *unit) {
-  out << "Prf ";
-  outputFormula(out, unit->formula());
+struct DkUnit {
+  Unit *unit;
+  DkUnit(Unit *unit) : unit(unit) {}
+};
+
+static std::ostream &operator<<(std::ostream &out, DkUnit dk) {
+  if(dk.unit->isClause())
+    return out << DkClause(static_cast<Clause *>(dk.unit));
+  else
+    return out << "Prf " << DkFormula(static_cast<FormulaUnit *>(dk.unit)->formula());
 }
 
 static void outputAxiomName(std::ostream &out, Unit *axiom) {
@@ -537,33 +519,25 @@ static void outputAxiomName(std::ostream &out, Unit *axiom) {
   out << axiom->number() << "|}";
 }
 
-static void outputSplitSet(std::ostream &out, SplitSet &splits) {
-  for(unsigned i = 0; i < splits.size(); i++) {
-    SATLiteral split = Splitter::getLiteralFromName(splits[i]);
-    out << " nnsp" << split.var();
-    out << " : (Prf";
-    if(!split.polarity())
-      out << " (not";
-    out <<  " (not sp" << split.var();
-    if(!split.polarity())
-      out << ")";
-    out << ") -> Prf false) =>";
-  }
-}
-
 static void outputDeductionPrefix(std::ostream &out, Unit *deduction, bool splits = true) {
-  out << "def deduction" << deduction->number() << ": ";
-  if(deduction->isClause())
-    outputClause(out, static_cast<Clause *>(deduction));
-  else
-    outputFormulaUnit(out, static_cast<FormulaUnit *>(deduction));
-
-  out << " := ";
+  out << "def deduction" << deduction->number() << ": " << DkUnit(deduction) << " := ";
   if(splits && deduction->isClause()) {
     Clause *clause = static_cast<Clause *>(deduction);
     if(clause->noSplits())
       return;
-    outputSplitSet(out, *clause->splits());
+
+    SplitSet &splits = *clause->splits();
+    for(unsigned i = 0; i < splits.size(); i++) {
+      SATLiteral split = Splitter::getLiteralFromName(splits[i]);
+      out << " nnsp" << split.var() << " : (Prf";
+      {
+        CloseParens cp(out);
+        out
+          << cp.open_if(!split.polarity(), " (not")
+          <<  " (not sp" << split.var();
+      }
+      out << ") -> Prf false) =>";
+    }
   }
 }
 
@@ -579,21 +553,11 @@ static void outputParentWithSplits(std::ostream &out, Clause *parent) {
 static void sorry(std::ostream &out, Unit *admit) {
   out << "sorry" << admit->number() << ": ";
   UnitIterator parents = admit->getParents();
-  while(parents.hasNext()) {
-    Unit *parent = parents.next();
-    if(parent->isClause())
-      outputClause(out, static_cast<Clause *>(parent));
-    else
-      outputFormulaUnit(out, static_cast<FormulaUnit *>(parent));
-    out << " -> ";
-  }
-  if(admit->isClause())
-    outputClause(out, static_cast<Clause *>(admit));
-  else
-    outputFormulaUnit(out, static_cast<FormulaUnit *>(admit));
-  out << ".\n";
-
-  out << "#PRINT \"sorry: " << ruleName(admit->inference().rule()) << "\".\n";
+  while(parents.hasNext())
+    out << DkUnit(parents.next()) << " -> ";
+  out
+    << DkUnit(admit) << ".\n"
+    << "#PRINT \"sorry: " << ruleName(admit->inference().rule()) << "\".\n";
 
   outputDeductionPrefix(out, admit, false);
   out << "sorry" << admit->number();
@@ -756,7 +720,7 @@ static void outputSubsumptionResolution(std::ostream &out, Clause *derived) {
   outputParentWithSplits(out, left);
 
   for(unsigned v : leftVars)
-    out << " " << dkVar(v, care);
+    out << " " << DkVar(v, care);
 
   // TODO can we make this case distinction less unpleasant?
   if(m->isPositive()) {
@@ -984,7 +948,7 @@ static void outputDemodulation(std::ostream &out, Clause *derived) {
   outputParentWithSplits(out, left);
 
   for(unsigned v : leftVars)
-    out << " " << dkVar(v, care);
+    out << " " << DkVar(v, care);
   for(Literal *litLeft : litsLeft) {
     out << " ";
 
@@ -1042,7 +1006,7 @@ static void outputDefinitionUnfolding(std::ostream &out, Clause *derived) {
 
   out << " deduction" << parent->number();
   for(unsigned v : derivedVars)
-    out << " " << dkVar(v, care);
+    out << " " << DkVar(v, care);
 
   std::unordered_map<unsigned, unsigned> rewrites;
   for(unsigned i = 0; i < defs.size(); i++)
@@ -1149,7 +1113,7 @@ static void outputTrivialInequalityRemoval(std::ostream &out, Clause *derived) {
   outputParentWithSplits(out, parent);
 
   for(unsigned v : parentVars)
-    out << " " << dkVar(v, care);
+    out << " " << DkVar(v, care);
   for(Literal *l : litsParent) {
     out << " ";
     if(l->polarity() || !l->isEquality() || l->termArg(0) != l->termArg(1)) {
@@ -1313,7 +1277,7 @@ static void outputDuplicateLiteral(std::ostream &out, Clause *derived) {
   outputParentWithSplits(out, parent);
 
   for(unsigned v : vars)
-    out << " " << dkVar(v);
+    out << " " << DkVar(v);
   for(Literal *l : litsParent)
     out << " " << l;
 }
@@ -1442,15 +1406,16 @@ static void outputAVATARSplitClause(std::ostream &out, Unit *derived) {
   }
 
   out << "def deduction" << derived->number() << " : Prf_av_clause";
-  for(SATLiteral sl : existingSplits)
-    out << " (if " << DkSplit(sl);
-  out << " (acl (cl";
-  for(SATLiteral sl : newSplits)
-    out << " (cons " << DkSplit(sl);
-  out << " ec";
-  for(unsigned i = 0; i < sat->length(); i++)
-    out << ")";
-  out << ")) :=";
+  {
+    CloseParens cp(out);
+    for(SATLiteral sl : existingSplits)
+      out << cp.open(" (if ") << DkSplit(sl);
+    out << cp.open(" (acl") << cp.open(" (cl");
+    for(SATLiteral sl : newSplits)
+      out << cp.open(" (cons ") << DkSplit(sl);
+    out << " ec";
+  }
+  out << " :=";
 
   Stack<LiteralStack> disjointLiterals;
   if(!Splitter::getComponents(parent, disjointLiterals)) {
@@ -1466,7 +1431,7 @@ static void outputAVATARSplitClause(std::ostream &out, Unit *derived) {
   for(SATLiteral l : newSplits)
     out << " nnsp" << l.var() << " : (Prf " << DkSplit(l) << " -> Prf false) =>";
 
-  unsigned closeParens = 0;
+  CloseParens cp(out);
   decltype(disjointLiterals)::Iterator classes(disjointLiterals);
   // map variables in the parent to corresponding variables in the child splits
   SimpleSubstitution parent2SplitVars;
@@ -1494,18 +1459,16 @@ static void outputAVATARSplitClause(std::ostream &out, Unit *derived) {
     SATLiteral split = Splitter::getLiteralFromName(found->splits()->sval());
     out << " nnsp" << split.var();
     for(unsigned foundVar : variables(found)) {
-      out << " (" << subst.apply(foundVar).var() << " : El iota =>";
+      out << cp.open(" (") << subst.apply(foundVar).var() << " : El iota =>";
       ALWAYS(parent2SplitVars.bind(subst.apply(foundVar).var(), TermList(foundVar, false)))
-      closeParens++;
     }
     for(Literal *l : canonicalise(found)) {
       if(flip)
         l = Literal::complementaryLiteral(l);
       out
-        << " (" << SubstHelper::apply(l, subst) << " : (Prf "
+        << cp.open(" (") << SubstHelper::apply(l, subst) << " : (Prf "
         << DkLit(l, AlwaysCare {}, DoSubstitution(subst))
         << " -> Prf false) =>";
-      closeParens++;
     }
   }
 
@@ -1527,7 +1490,7 @@ static void outputAVATARSplitClause(std::ostream &out, Unit *derived) {
   }
 
   for(unsigned parentVar : variables(parent))
-    out << " " << parentVar; //parent2SplitVars.apply(parentVar).var();
+    out << " " << parentVar;
   for(Literal *l : canonicalise(parent)) {
     out << ' ';
     Literal *lsubst = SubstHelper::apply(l, parent2SplitVars);
@@ -1544,15 +1507,13 @@ static void outputAVATARSplitClause(std::ostream &out, Unit *derived) {
     if(needs_commute)
       out << ")";
   }
-  while(closeParens--)
-    out << ')';
 }
 
 static void outputAVATARContradictionClause(std::ostream &out, Unit *contradiction) {
   auto [parent] = getParents<1>(contradiction);
-  out << "def deduction" << contradiction->number() << " : ";
-  outputClause(out, parent);
-  out << " := deduction" << parent->number();
+  out
+    << "def deduction" << contradiction->number() << " : "
+    << DkClause(parent) << " := deduction" << parent->number();
 }
 
 namespace Shell {
@@ -1589,12 +1550,7 @@ void outputTypeDecl(std::ostream &out, const std::string &name, OperatorType *ty
 
 void outputAxiom(std::ostream &out, Unit *axiom) {
   outputAxiomName(out, axiom);
-  out << ": ";
-  if(axiom->isClause())
-    outputClause(out, static_cast<Clause *>(axiom));
-  else
-    outputFormulaUnit(out, static_cast<FormulaUnit *>(axiom));
-  out << ".\n";
+  out << ": " << DkUnit(axiom) << ".\n";
 }
 
 void outputDeduction(std::ostream &out, Unit *u) {
